@@ -26,9 +26,10 @@ class AbaqusData:
         D_c, 柱核心混凝土截面短边边长(mm)
     core_high : float
         B_c, 柱核心混凝土截面长边边长(mm)
-    ---
-    tube_area : float
-        A_s, 带约束拉杆的方形、矩形钢管混凝土柱截面钢管面积(mm^2)
+    column_length : float
+        H, 柱高度(mm)
+    tube_thickness : float
+        t, 钢管厚度(mm)
     ---
     pullroll_area : float
         A_b, 单根约束拉杆的面积(mm^2)
@@ -49,12 +50,17 @@ class AbaqusData:
 
     core_width: float
     core_high: float
-
-    tube_area: float
+    column_length: float
+    tube_thickness: float
 
     pullroll_area: float
     pullroll_distance: float
     pullroll_number: float
+
+    @property
+    def tube_area(self):
+        """A_s, 带约束拉杆的方形、矩形钢管混凝土柱截面钢管面积(mm^2)"""
+        return 2 * (self.core_high + self.core_width) * self.tube_thickness
 
     @property
     def json_tube(self, table_len: int = 50):
@@ -78,7 +84,7 @@ class AbaqusData:
         }
 
     @property
-    def data_pullroll(self, table_len: int = 50):
+    def json_pullroll(self, table_len: int = 50):
         steelbar_model = constitutive_models.PullrollConstitutiveModels(
             self.steelbar.strength_criterion_yield,
             self.steelbar.elastic_modulus,
@@ -135,23 +141,35 @@ class AbaqusData:
             "elastic_modulus": self.concrete.elastic_modulus,
         }
 
+    @property
+    def json_geometry(self):
+        return {
+            "width": self.core_width,
+            "high": self.core_high,
+            "length": self.column_length,
+            "tube_thickness": self.tube_thickness,
+        }
+
+    @property
+    def json_task(self):
+        return {
+            "materials": {
+                "concrete": self.json_core_concrete,
+                "steel": self.json_tube,
+                "steelbar": self.json_pullroll,
+            },
+            "geometry": self.json_geometry,
+        }
+
 
 @logger.catch
 def main():
     concrete = materials.Concrete.from_table("C50")
     steel = materials.Steel.from_table("Q355")
     steelbar = materials.SteelBar.from_table("HRB400")
-    abadata = AbaqusData(concrete, steel, steelbar, 500, 500, 5 * 500 * 4, 1, 1, 0)
-
-    json_data = {
-        "materials": {
-            "concrete": abadata.json_core_concrete,
-            "steel": abadata.json_tube,
-            "steelbar": abadata.data_pullroll,
-        }
-    }
+    abadata = AbaqusData(concrete, steel, steelbar, 300, 300, 1000, 7, 1, 1, 0)
     tt.JsonFile.write(
-        json_data,
+        abadata.json_task,
         "abatmp.json",
     )
     # plt.xscale("log")

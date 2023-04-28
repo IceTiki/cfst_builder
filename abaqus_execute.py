@@ -8,7 +8,6 @@ import io
 class JsonTask:
     def __init__(self, filename):
         self.data = self.load_json(filename)
-        self.materials = self.data["materials"]
 
     @staticmethod
     def load_json(filename, encoding="utf-8"):
@@ -22,6 +21,10 @@ class JsonTask:
         return tuple((i, j) for i, j in zip(material["sigma"], material["epsilon"]))
 
     @property
+    def materials(self):
+        return self.data["materials"]
+
+    @property
     def concrete_plasticity_model(self):
         return self.get_model("concrete")
 
@@ -33,8 +36,37 @@ class JsonTask:
     def steelbar_plasticity_model(self):
         return self.get_model("steelbar")
 
+    @property
+    def geometry(self):
+        """几何"""
+        return self.data["geometry"]
 
-json_task = JsonTask("C:\\Users\\Tiki_\\Desktop\\abatmp.json")
+    @property
+    def width(self):
+        return self.geometry["width"]
+
+    @property
+    def high(self):
+        return self.geometry["high"]
+
+    @property
+    def length(self):
+        return self.geometry["length"]
+
+    @property
+    def tube_thickness(self):
+        return self.geometry["tube_thickness"]
+
+    @property
+    def referpoint_1(self):
+        return (self.width / 2, self.high / 2, -20.0)
+
+    @property
+    def referpoint_2(self):
+        return (self.width / 2, self.high / 2, self.length + 20.0)
+
+
+json_task = JsonTask("C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\abatmp.json")
 
 
 caename = "demo5"
@@ -66,12 +98,12 @@ mdb.saveAs(pathName=caepath)
 s1 = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
 g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
 s1.setPrimaryObject(option=STANDALONE)
-s1.rectangle(point1=(0.0, 0.0), point2=(500.0, 500.0))
+s1.rectangle(point1=(0.0, 0.0), point2=(json_task.width, json_task.high))
 p = mdb.models["Model-1"].Part(
     name="concrete", dimensionality=THREE_D, type=DEFORMABLE_BODY
 )
 p = mdb.models["Model-1"].parts["concrete"]
-p.BaseSolidExtrude(sketch=s1, depth=4000.0)
+p.BaseSolidExtrude(sketch=s1, depth=json_task.length)
 s1.unsetPrimaryObject()
 p = mdb.models["Model-1"].parts["concrete"]
 del mdb.models["Model-1"].sketches["__profile__"]
@@ -80,12 +112,12 @@ del mdb.models["Model-1"].sketches["__profile__"]
 s = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
 g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
 s.setPrimaryObject(option=STANDALONE)
-s.rectangle(point1=(0.0, 0.0), point2=(500.0, 500.0))
+s.rectangle(point1=(0.0, 0.0), point2=(json_task.width, json_task.high))
 p = mdb.models["Model-1"].Part(
     name="tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
 )
 p = mdb.models["Model-1"].parts["tubelar"]
-p.BaseShellExtrude(sketch=s, depth=4000.0)
+p.BaseShellExtrude(sketch=s, depth=json_task.length)
 s.unsetPrimaryObject()
 p = mdb.models["Model-1"].parts["tubelar"]
 del mdb.models["Model-1"].sketches["__profile__"]
@@ -130,7 +162,7 @@ mdb.models["Model-1"].HomogeneousShellSection(
     preIntegrate=OFF,
     material="steel_tube",
     thicknessType=UNIFORM,
-    thickness=10.0,
+    thickness=json_task.tube_thickness,
     thicknessField="",
     nodalThicknessField="",
     idealization=NO_IDEALIZATION,
@@ -251,9 +283,9 @@ mdb.models["Model-1"].SurfaceToSurfaceContactStd(
 
 # ===创建参考点
 a = mdb.models["Model-1"].rootAssembly
-a.ReferencePoint(point=(200.0, 200.0, -20.0))
+a.ReferencePoint(point=json_task.referpoint_1)
 a = mdb.models["Model-1"].rootAssembly
-a.ReferencePoint(point=(200.0, 200.0, 4020.0))
+a.ReferencePoint(point=json_task.referpoint_2)
 
 # ===创建底面刚体
 a = mdb.models["Model-1"].rootAssembly
