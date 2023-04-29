@@ -24,9 +24,19 @@ class JsonTask:
     def materials(self):
         return self.data["materials"]
 
+    # ===concrete
     @property
     def concrete_plasticity_model(self):
         return self.get_model("concrete")
+
+    @property
+    def concrete_gfi(self):
+        return (
+            (
+                self.materials["concrete"]["gfi"],
+                self.materials["concrete"]["strength_tensile"],
+            ),
+        )
 
     @property
     def steel_plasticity_model(self):
@@ -69,7 +79,7 @@ class JsonTask:
 json_task = JsonTask("C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\abatmp.json")
 
 
-caename = "demo5"
+caename = "demo6"
 caepath = "D:/Casual/T_%s/%s" % (caename, caename)
 
 # ===abaqus初始化
@@ -141,7 +151,9 @@ mdb.models["Model-1"].materials[
 )
 mdb.models["Model-1"].materials[
     "concrete"
-].concreteDamagedPlasticity.ConcreteTensionStiffening(table=((1.89, 120),), type=GFI)
+].concreteDamagedPlasticity.ConcreteTensionStiffening(
+    table=json_task.concrete_gfi, type=GFI
+)
 mdb.models["Model-1"].materials["concrete"].Elastic(table=((34500.0, 0.2),))
 
 # ===创建材料-拉杆
@@ -330,7 +342,9 @@ a = mdb.models["Model-1"].rootAssembly
 r1 = a.referencePoints
 refPoints1 = (r1[8],)
 region = regionToolset.Region(referencePoints=refPoints1)
-mdb.models["Model-1"].EncastreBC(
+# PinnedBC 铰接
+# EncastreBC 固接
+mdb.models["Model-1"].PinnedBC(
     name="bound_bottom", createStepName="Step-1", region=region, localCsys=None
 )
 
@@ -356,46 +370,3 @@ mdb.models["Model-1"].DisplacementBC(
     localCsys=None,
 )
 
-# ===设为独立-混凝土/钢管
-a = mdb.models["Model-1"].rootAssembly
-a.makeIndependent(instances=(a.instances["concrete-1"],))
-a = mdb.models["Model-1"].rootAssembly
-a.makeIndependent(instances=(a.instances["tubelar-1"],))
-
-# ===部件-拉杆
-s = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=200.0)
-g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
-s.setPrimaryObject(option=STANDALONE)
-s.Line(point1=(0.0, 0.0), point2=(500.0, 0.0))
-s.HorizontalConstraint(entity=g[2], addUndoState=False)
-p = mdb.models["Model-1"].Part(
-    name="pullroll", dimensionality=THREE_D, type=DEFORMABLE_BODY
-)
-p = mdb.models["Model-1"].parts["pullroll"]
-p.BaseWire(sketch=s)
-s.unsetPrimaryObject()
-p = mdb.models["Model-1"].parts["pullroll"]
-session.viewports["Viewport: 1"].setValues(displayedObject=p)
-del mdb.models["Model-1"].sketches["__profile__"]
-
-# ===创建截面-拉杆
-mdb.models["Model-1"].TrussSection(
-    name="pullroll", material="steel_pullroll", area=40.0
-)
-
-# ===指派截面-拉杆
-p = mdb.models["Model-1"].parts["pullroll"]
-e = p.edges
-edges = e.getSequenceFromMask(
-    mask=("[#1 ]",),
-)
-region = regionToolset.Region(edges=edges)
-p = mdb.models["Model-1"].parts["pullroll"]
-p.SectionAssignment(
-    region=region,
-    sectionName="pullroll",
-    offset=0.0,
-    offsetType=MIDDLE_SURFACE,
-    offsetField="",
-    thicknessAssignment=FROM_SECTION,
-)

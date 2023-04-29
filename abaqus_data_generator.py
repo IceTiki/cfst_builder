@@ -64,6 +64,7 @@ class AbaqusData:
 
     @property
     def json_tube(self, table_len: int = 50):
+        """钢管"""
         steel_model = constitutive_models.SteelTubelarConstitutiveModels(
             self.steel.strength_yield,
             self.steel.strength_tensile,
@@ -85,6 +86,7 @@ class AbaqusData:
 
     @property
     def json_pullroll(self, table_len: int = 50):
+        """约束拉杆"""
         steelbar_model = constitutive_models.PullrollConstitutiveModels(
             self.steelbar.strength_criterion_yield,
             self.steelbar.elastic_modulus,
@@ -107,10 +109,11 @@ class AbaqusData:
 
     @property
     def json_core_concrete(self, table_len: int = 50):
+        """核心混凝土"""
         concrete_model = constitutive_models.ConcreteConstitutiveModels(
             self.core_width,
             self.core_high,
-            self.concrete.strength_pressure / 0.8,
+            self.concrete.strength_pressure * 1.25,  # !圆柱体抗压强度暂取f_ck的1.25倍
             self.concrete.strength_pressure,
             self.tube_area,
             self.steel.strength_yield,
@@ -128,6 +131,7 @@ class AbaqusData:
                 break
         else:
             raise Exception("??????")
+        concrete_cut = 0.0001
 
         x = np.linspace(concrete_cut, 0.03, table_len) + (0.03 - 0) / table_len
         y = concrete_model.model(x)
@@ -135,10 +139,20 @@ class AbaqusData:
 
         x = x - concrete_cut
         x[0] = 0
+
+        # ===混凝土塑性损伤的断裂能
+
+        concrete_gfi = np.interp(
+            self.concrete.strength_pressure * 1.25, [20, 40], [40, 120]
+        )
+        print(f"{self.concrete.strength_tensile}MPa <-> {concrete_gfi}N/m")
+
         return {
             "sigma": y.tolist(),
             "epsilon": x.tolist(),
             "elastic_modulus": self.concrete.elastic_modulus,
+            "strength_tensile": self.concrete.strength_tensile,
+            "gfi": concrete_gfi,
         }
 
     @property
@@ -164,10 +178,19 @@ class AbaqusData:
 
 @logger.catch
 def main():
-    concrete = materials.Concrete.from_table("C50")
-    steel = materials.Steel.from_table("Q355")
-    steelbar = materials.SteelBar.from_table("HRB400")
-    abadata = AbaqusData(concrete, steel, steelbar, 300, 300, 1000, 7, 1, 1, 0)
+    concrete = materials.Concrete.from_table("C40")
+    steel = materials.Steel.from_table("Q345GJ")
+    steelbar = materials.SteelBar.from_table("HRB335")
+
+    # steel.strength_yield = 344.45
+    # steelbar.strength_criterion_yield = 387.98
+    # concrete.strength_criterion_pressure = 39.82
+    e = 0.133  # todo
+    print("偏心距", e * 300)
+
+    abadata = AbaqusData(
+        concrete, steel, steelbar, 300, 300, 1500, 6, np.pi * (14 / 2) ** 2, 150, 1
+    )
     tt.JsonFile.write(
         abadata.json_task,
         "abatmp.json",
@@ -178,11 +201,6 @@ def main():
     # plt.ylabel(r"$\sigma$ 应力 (MPa)")
     # plt.savefig("tmp.png", dpi=600)
     # plt.show()
-
-    # ===混凝土塑性损伤的断裂能
-    print(
-        f"{abadata.concrete.strength_tensile}MPa <-> {np.interp(abadata.concrete.strength_pressure / 0.8, [20, 40], [40, 120])}N/mm"
-    )
 
 
 if __name__ == "__main__":
