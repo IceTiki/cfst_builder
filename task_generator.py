@@ -1,6 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from dataclasses import dataclass
+from typing import Union
+import math
 
 from materlib import materials, constitutive_models
 from loguru import logger
@@ -13,6 +15,60 @@ tp.chinese_font_support()
 
 
 @dataclass
+class Geometry:
+    """
+    Parameters
+    ---
+    width : float
+        D, 截面短边边长(mm)
+    high : float
+        B, 截面长边边长(mm)
+    deep : float
+        H, 柱高度(mm)
+    tubelar_thickness : float
+        t, 钢管厚度(mm)
+    """
+
+    width: float
+    high: float
+    deep: float
+    tubelar_thickness: float
+
+
+@dataclass
+class ReferencePoint:
+    """
+    Parameters
+    ---
+    shift : list[float]
+        偏移坐标(x,y,z)
+    displacement : list[float | None]
+        位移(U1, U2, U3, RU1, RU2, RU3), 如果为None会转变为abaqus的UNSET
+    """
+
+    shift: list[float]
+    displacement: list[Union[float, None]]
+
+
+@dataclass
+class Pullroll:
+    """
+    Parameters
+    ---
+    area : float
+        A_b, 单根约束拉杆的面积(mm^2)
+    distance : float
+        b_s, 柱纵向约束拉杆的间距(mm)
+    number : float
+        n_s, 柱在b_s范围内约束拉杆的根数
+    """
+
+    area: float
+    distance: float
+    number: float
+
+
+@dataclass
 class AbaqusData:
     """
 
@@ -21,22 +77,13 @@ class AbaqusData:
     concrete : materials.Concrete
     steel : materials.Steel
     steelbar : materials.SteelBar
+        约束拉杆材料
     ---
-    core_width : float
-        D_c, 柱核心混凝土截面短边边长(mm)
-    core_high : float
-        B_c, 柱核心混凝土截面长边边长(mm)
-    column_length : float
-        H, 柱高度(mm)
-    tube_thickness : float
-        t, 钢管厚度(mm)
-    ---
-    pullroll_area : float
-        A_b, 单根约束拉杆的面积(mm^2)
-    pullroll_distance : float
-        b_s, 柱纵向约束拉杆的间距(mm)
-    pullroll_number : float
-        n_s, 柱在b_s范围内约束拉杆的根数
+    geometry : Geometry
+    pullroll : Pullroll
+        约束拉杆分布
+    reterpoint_top, referpoint_bottom: ReferencePoint
+        上下参考点
 
     Note
     ---
@@ -47,20 +94,19 @@ class AbaqusData:
     concrete: materials.Concrete
     steel: materials.Steel
     steelbar: materials.SteelBar
-
-    core_width: float
-    core_high: float
-    column_length: float
-    tube_thickness: float
-
-    pullroll_area: float
-    pullroll_distance: float
-    pullroll_number: float
+    geometry: Geometry
+    pullroll: Pullroll
+    reterpoint_top: ReferencePoint
+    referpoint_bottom: ReferencePoint
 
     @property
     def tube_area(self):
         """A_s, 带约束拉杆的方形、矩形钢管混凝土柱截面钢管面积(mm^2)"""
-        return 2 * (self.core_high + self.core_width) * self.tube_thickness
+        return (
+            2
+            * (self.geometry.high + self.geometry.width)
+            * self.geometry.tubelar_thickness
+        )
 
     @property
     def json_tube(self, table_len: int = 50):
@@ -85,7 +131,7 @@ class AbaqusData:
         }
 
     @property
-    def json_pullroll(self, table_len: int = 50):
+    def json_steelbar(self, table_len: int = 50):
         """约束拉杆"""
         steelbar_model = constitutive_models.PullrollConstitutiveModels(
             self.steelbar.strength_criterion_yield,
@@ -110,17 +156,20 @@ class AbaqusData:
     @property
     def json_core_concrete(self, table_len: int = 50):
         """核心混凝土"""
+        concrete_core_strength = (
+            self.concrete.strength_pressure * 1.25
+        )  # !圆柱体抗压强度暂取f_ck的1.25倍
         concrete_model = constitutive_models.ConcreteConstitutiveModels(
-            self.core_width,
-            self.core_high,
-            self.concrete.strength_pressure * 1.25,  # !圆柱体抗压强度暂取f_ck的1.25倍
+            self.geometry.width,
+            self.geometry.high,
+            concrete_core_strength,
             self.concrete.strength_pressure,
             self.tube_area,
             self.steel.strength_yield,
-            self.pullroll_area,
+            self.pullroll.area,
             self.steelbar.strength_criterion_yield,
-            self.pullroll_distance,
-            self.pullroll_number,
+            self.pullroll.distance,
+            self.pullroll.number,
         )
 
         x = np.linspace(0, 0.03, table_len)
@@ -142,9 +191,7 @@ class AbaqusData:
 
         # ===混凝土塑性损伤的断裂能
 
-        concrete_gfi = np.interp(
-            self.concrete.strength_pressure * 1.25, [20, 40], [40, 120]
-        )
+        concrete_gfi = np.interp(concrete_core_strength, [20, 40], [40, 120])
         print(f"{self.concrete.strength_tensile}MPa <-> {concrete_gfi}N/m")
 
         return {
@@ -158,10 +205,37 @@ class AbaqusData:
     @property
     def json_geometry(self):
         return {
-            "width": self.core_width,
-            "high": self.core_high,
-            "length": self.column_length,
-            "tube_thickness": self.tube_thickness,
+            "width": self.geometry.width,
+            "high": self.geometry.high,
+            "length": self.geometry.deep,
+            "tube_thickness": self.geometry.tubelar_thickness,
+        }
+
+    @property
+    def json_referpoint(self):
+        return {
+            "top": {
+                "shift": self.reterpoint_top.shift,
+                "displacement": self.reterpoint_top.displacement,
+            },
+            "bottom": {
+                "shift": self.referpoint_bottom.shift,
+                "displacement": self.referpoint_bottom.displacement,
+            },
+        }
+
+    @property
+    def json_pullroll(self):
+        number_z = math.ceil(
+            (self.geometry.deep - self.pullroll.distance) / self.pullroll.distance
+        )
+        start_shift = (self.geometry.deep - self.pullroll.distance * number_z) / 2
+        return {
+            "area": self.pullroll.area,
+            "distance": self.pullroll.distance,
+            "number_xy": self.pullroll.number,
+            "number_z": number_z,
+            "start_shift": start_shift,
         }
 
     @property
@@ -170,27 +244,29 @@ class AbaqusData:
             "materials": {
                 "concrete": self.json_core_concrete,
                 "steel": self.json_tube,
-                "steelbar": self.json_pullroll,
+                "steelbar": self.json_steelbar,
             },
             "geometry": self.json_geometry,
+            "referpoint": self.json_referpoint,
+            "pullroll": self.json_pullroll,
         }
 
 
 @logger.catch
 def main():
-    concrete = materials.Concrete.from_table("C40")
-    steel = materials.Steel.from_table("Q345GJ")
-    steelbar = materials.SteelBar.from_table("HRB335")
-
+    concrete = materials.Concrete.from_table("C60")
+    steel = materials.Steel.from_table("Q390")
+    steelbar = materials.SteelBar.from_table("HRB400")
+    geo = Geometry(300, 300, 1500, 6)
+    roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1)
+    e = 0.133  # 偏心距
+    rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -45, None, None, None])
+    rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, None, None])
     # steel.strength_yield = 344.45
     # steelbar.strength_criterion_yield = 387.98
     # concrete.strength_criterion_pressure = 39.82
-    e = 0.133  # todo
-    print("偏心距", e * 300)
 
-    abadata = AbaqusData(
-        concrete, steel, steelbar, 300, 300, 1500, 6, np.pi * (14 / 2) ** 2, 150, 1
-    )
+    abadata = AbaqusData(concrete, steel, steelbar, geo, roll, rp_top, rp_bottom)
     tt.JsonFile.write(
         abadata.json_task,
         "abatmp.json",
