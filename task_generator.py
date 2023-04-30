@@ -69,6 +69,12 @@ class Pullroll:
 
 
 @dataclass
+class TaskMeta:
+    jobname: str
+    caename: str
+
+
+@dataclass
 class AbaqusData:
     """
 
@@ -254,14 +260,14 @@ class AbaqusData:
 
 @logger.catch
 def main():
-    concrete = materials.Concrete.from_table("C60")
-    steel = materials.Steel.from_table("Q390")
+    concrete = materials.Concrete.from_table("C55")
+    steel = materials.Steel.from_table("Q460")
     steelbar = materials.SteelBar.from_table("HRB400")
-    geo = Geometry(300, 300, 1500, 6)
+    geo = Geometry(150, 300, 1200, 6)
     roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1)
-    e = 0.133  # 偏心距
-    rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -45, None, None, None])
-    rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, None, None])
+    e = 0.333  # 偏心距
+    rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -100, None, 0, 0])
+    rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, 0, 0])
     # steel.strength_yield = 344.45
     # steelbar.strength_criterion_yield = 387.98
     # concrete.strength_criterion_pressure = 39.82

@@ -122,6 +122,8 @@ session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
     referenceRepresentation=ON
 )
 Mdb()
+mdb.close()
+Mdb()
 #: 新的模型数据库已创建.
 #: 模型 "Model-1" 已创建.
 session.viewports["Viewport: 1"].setValues(displayedObject=None)
@@ -385,24 +387,50 @@ a1.InstanceFromBooleanMerge(
 
 # ===创建参考点
 a = mdb.models["Model-1"].rootAssembly
-a.ReferencePoint(point=json_task.referpoint_bottom)
+feature_1 = a.ReferencePoint(point=json_task.referpoint_bottom)
 a = mdb.models["Model-1"].rootAssembly
-a.ReferencePoint(point=json_task.referpoint_top)
+feature_2 = a.ReferencePoint(point=json_task.referpoint_top)
+referpoint_bottom, referpoint_top = (
+    a.referencePoints[feature_1.id],
+    a.referencePoints[feature_2.id],
+)
 
 # ===创建底面刚体
 a = mdb.models["Model-1"].rootAssembly
+
+# f1 = a.instances["concrete-1"].faces
+# faces1 = f1.getSequenceFromMask(
+#     mask=("[#20 ]",),
+# )
+# e2 = a.instances["union-1"].edges
+# edges2 = e2.getSequenceFromMask(
+#     mask=("[#0 #a440 ]",),
+# )
+
 f1 = a.instances["concrete-1"].faces
-faces1 = f1.getSequenceFromMask(
-    mask=("[#20 ]",),
+faces1 = f1.findAt(
+    coordinates=tuple(
+        [(json_task.width / 2, json_task.high / 2, 0)],
+    )
 )
 e2 = a.instances["union-1"].edges
-edges2 = e2.getSequenceFromMask(
-    mask=("[#0 #a440 ]",),
+edges2 = e2.findAt(
+    coordinates=tuple(
+        [
+            (json_task.width / 2, 0, 0),
+            (json_task.width / 2, json_task.high, 0),
+            (0, json_task.high / 2, 0),
+            (json_task.width, json_task.high / 2, 0),
+        ]
+    )
 )
+
+
 region4 = regionToolset.Region(edges=edges2, faces=faces1)
 a = mdb.models["Model-1"].rootAssembly
 r1 = a.referencePoints
-refPoints1 = (r1[44],)
+
+refPoints1 = (referpoint_bottom,)
 region1 = regionToolset.Region(referencePoints=refPoints1)
 mdb.models["Model-1"].RigidBody(
     name="ct_bottom", refPointRegion=region1, tieRegion=region4
@@ -412,17 +440,27 @@ mdb.models["Model-1"].RigidBody(
 # ===创建顶面刚体
 a = mdb.models["Model-1"].rootAssembly
 f1 = a.instances["concrete-1"].faces
-faces1 = f1.getSequenceFromMask(
-    mask=("[#10 ]",),
+faces1 = f1.findAt(
+    coordinates=tuple(
+        [(json_task.width / 2, json_task.high / 2, json_task.length)],
+    )
 )
 e2 = a.instances["union-1"].edges
-edges2 = e2.getSequenceFromMask(
-    mask=("[#0 #4910 ]",),
+edges2 = e2.findAt(
+    coordinates=tuple(
+        [
+            (json_task.width / 2, 0, json_task.length),
+            (json_task.width / 2, json_task.high, json_task.length),
+            (0, json_task.high / 2, json_task.length),
+            (json_task.width, json_task.high / 2, json_task.length),
+        ]
+    )
 )
+
 region4 = regionToolset.Region(edges=edges2, faces=faces1)
 a = mdb.models["Model-1"].rootAssembly
 r1 = a.referencePoints
-refPoints1 = (r1[45],)
+refPoints1 = (referpoint_top,)
 region1 = regionToolset.Region(referencePoints=refPoints1)
 mdb.models["Model-1"].RigidBody(
     name="cp_top", refPointRegion=region1, tieRegion=region4
@@ -432,7 +470,7 @@ mdb.models["Model-1"].RigidBody(
 # ===边界条件-底部
 a = mdb.models["Model-1"].rootAssembly
 r1 = a.referencePoints
-refPoints1 = (r1[44],)
+refPoints1 = (referpoint_bottom,)
 region = regionToolset.Region(referencePoints=refPoints1)
 mdb.models["Model-1"].DisplacementBC(
     name="bound_bottom",
@@ -460,7 +498,7 @@ mdb.models["Model-1"].DisplacementBC(
 # ===边界条件-顶部
 a = mdb.models["Model-1"].rootAssembly
 r1 = a.referencePoints
-refPoints1 = (r1[45],)
+refPoints1 = (referpoint_top,)
 region = regionToolset.Region(referencePoints=refPoints1)
 mdb.models["Model-1"].DisplacementBC(
     name="bound_top",
@@ -550,7 +588,7 @@ p.generateMesh()
 # ===创建集
 a = mdb.models["Model-1"].rootAssembly
 r1 = a.referencePoints
-refPoints1 = (r1[45],)
+refPoints1 = (referpoint_top,)
 a.Set(referencePoints=refPoints1, name="RP-TOP")
 
 
