@@ -321,9 +321,9 @@ def main():
         "model-" + format_time(),
         True,
     )
-    geo = Geometry(150, 300, 1200, 6)
+    geo = Geometry(300, 300, 1200, 6)
     roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1, False)
-    e = 0.133  # 偏心距
+    e = 0.2  # 偏心距
     rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -100, None, 0, 0])
     rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, 0, 0])
     # steel.strength_yield = 344.45
