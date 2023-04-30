@@ -63,11 +63,14 @@ class Pullroll:
         b_s, 柱纵向约束拉杆的间距(mm)
     number : float
         n_s, 柱在b_s范围内约束拉杆的根数
+    only_x : bool
+        将y方形的拉杆面积设为1(约等于0)
     """
 
     area: float
     distance: float
     number: float
+    only_x: bool = False
 
 
 @dataclass
@@ -267,6 +270,7 @@ class AbaqusData:
             "number_xy": self.pullroll.number,
             "number_z": number_z,
             "start_shift": start_shift,
+            "only_x": self.pullroll.only_x,
         }
 
     @property
@@ -318,7 +322,7 @@ def main():
         True,
     )
     geo = Geometry(150, 300, 1200, 6)
-    roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1)
+    roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1, False)
     e = 0.133  # 偏心距
     rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -100, None, 0, 0])
     rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, 0, 0])

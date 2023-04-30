@@ -316,7 +316,11 @@ mdb.models[modelname].TrussSection(
 )
 
 # ===创建截面-拉杆Y
-mdb.models[modelname].TrussSection(name="pullroll_y", material="steel_pullroll", area=1)
+mdb.models[modelname].TrussSection(
+    name="pullroll_y",
+    material="steel_pullroll",
+    area=1 if json_task.data_pullroll["only_x"] else json_task.data_pullroll["area"],
+)
 
 # ===指派截面-拉杆X
 p = mdb.models[modelname].parts["pullroll_x"]
