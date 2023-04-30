@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from abaqus import *
 from abaqusConstants import *
+from caeModules import *
 import json
 import io
 import time
@@ -15,6 +16,12 @@ class JsonTask:
         """读取Json文件"""
         with io.open(filename, "r", encoding=encoding) as f:
             return json.load(f)
+
+    @staticmethod
+    def write_json(item, jsonFile="data.json", encoding="utf-8", ensure_ascii=False):
+        """写入Json文件"""
+        with io.open(jsonFile, "w", encoding=encoding) as f:
+            f.write(json.dumps(item, ensure_ascii=ensure_ascii).decode("utf-8"))
 
     def get_model(self, model_name):
         """两个列表转为元组"""
@@ -133,6 +140,7 @@ mdb.Model(name=modelname, modelType=STANDARD_EXPLICIT)
 #: 新的模型数据库已创建.
 #: 模型 modelname 已创建.
 session.viewports["Viewport: 1"].setValues(displayedObject=None)
+
 
 # ===部件-混凝土
 s1 = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
@@ -271,7 +279,6 @@ a.Instance(name="concrete-1", part=p, dependent=ON)
 p = mdb.models[modelname].parts["tubelar"]
 a.Instance(name="tubelar-1", part=p, dependent=ON)
 
-
 # ===创建部件-拉杆X
 s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
 g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
@@ -303,7 +310,9 @@ del mdb.models[modelname].sketches["__profile__"]
 
 # ===创建截面-拉杆X
 mdb.models[modelname].TrussSection(
-    name="pullroll_x", material="steel_pullroll", area=json_task.data_pullroll["area"]
+    name="pullroll_x",
+    material="steel_pullroll",
+    area=json_task.data_pullroll["area"],
 )
 
 # ===创建截面-拉杆Y
@@ -387,7 +396,6 @@ a1.InstanceFromBooleanMerge(
     domain=BOTH,
 )
 
-
 # ===创建参考点
 a = mdb.models[modelname].rootAssembly
 feature_1 = a.ReferencePoint(point=json_task.referpoint_bottom)
@@ -428,7 +436,6 @@ edges2 = e2.findAt(
     )
 )
 
-
 region4 = regionToolset.Region(edges=edges2, faces=faces1)
 a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
@@ -438,7 +445,6 @@ region1 = regionToolset.Region(referencePoints=refPoints1)
 mdb.models[modelname].RigidBody(
     name="ct_bottom", refPointRegion=region1, tieRegion=region4
 )
-
 
 # ===创建顶面刚体
 a = mdb.models[modelname].rootAssembly
@@ -469,7 +475,6 @@ mdb.models[modelname].RigidBody(
     name="cp_top", refPointRegion=region1, tieRegion=region4
 )
 
-
 # ===边界条件-底部
 a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
@@ -497,7 +502,6 @@ mdb.models[modelname].DisplacementBC(
 #     name="bound_bottom", createStepName="Step-1", region=region, localCsys=None
 # )
 
-
 # ===边界条件-顶部
 a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
@@ -520,7 +524,6 @@ mdb.models[modelname].DisplacementBC(
     localCsys=None,
 )
 
-
 # ===创建相互作用属性-钢管-混凝土(硬接触和摩擦)
 mdb.models[modelname].ContactProperty("tube-concrete")
 mdb.models[modelname].interactionProperties["tube-concrete"].TangentialBehavior(
@@ -537,7 +540,9 @@ mdb.models[modelname].interactionProperties["tube-concrete"].TangentialBehavior(
     elasticSlipStiffness=None,
 )
 mdb.models[modelname].interactionProperties["tube-concrete"].NormalBehavior(
-    pressureOverclosure=HARD, allowSeparation=ON, constraintEnforcementMethod=DEFAULT
+    pressureOverclosure=HARD,
+    allowSeparation=ON,
+    constraintEnforcementMethod=DEFAULT,
 )
 
 # ===创建相互作用-钢管-混凝土
@@ -587,13 +592,11 @@ p.seedPart(size=50.0, deviationFactor=0.1, minSizeFactor=0.1)
 p = mdb.models[modelname].parts["concrete"]
 p.generateMesh()
 
-
 # ===创建集
 a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
 refPoints1 = (referpoint_top,)
 a.Set(referencePoints=refPoints1, name="RP-TOP")
-
 
 # ===历程输出
 regionDef = mdb.models[modelname].rootAssembly.sets["RP-TOP"]
@@ -658,8 +661,31 @@ session.viewports["Viewport: 1"].assemblyDisplay.setValues(
     optimizationTasks=OFF, geometricRestrictions=OFF, stopConditions=OFF
 )
 
-# # ===提交
-# # st_time = time.time()
-# # mdb.jobs[jobname].submit()
-# # mdb.jobs[jobname].waitForCompletion()
-# # print(time.time()-st_time)
+# ===提交
+if json_task.meta["submit"]:
+    st_time = time.time()
+    mdb.jobs[jobname].submit()
+    mdb.jobs[jobname].waitForCompletion()
+    print("job running time(s):", time.time() - st_time)
+
+    print(str(session.odbs).split("'")[1])
+    odb = session.odbs[str(session.odbs).split("'")[1]]
+    xy0 = xyPlot.XYDataFromHistory(
+        odb=odb,
+        outputVariableName="Reaction force: RF3 PI: rootAssembly Node 2 in NSET RP-TOP",
+        steps=("Step-1",),
+        suppressQuery=True,
+        __linkedVpName__="Viewport: 1",
+    )
+    xy1 = xyPlot.XYDataFromHistory(
+        odb=odb,
+        outputVariableName="Spatial displacement: U3 PI: rootAssembly Node 2 in NSET RP-TOP",
+        steps=("Step-1",),
+        suppressQuery=True,
+        __linkedVpName__="Viewport: 1",
+    )
+
+    JsonTask.write_json(
+        {"x": [i[1] for i in xy0], "y": [i[1] for i in xy1], "t": [i[0] for i in xy0]},
+        json_task.meta["taskfolder"] + "\\top_point_data.json",
+    )

@@ -271,12 +271,13 @@ class AbaqusData:
 
     @property
     def json_meta(self):
-        caepath = Path(self.meta.caepath)
-        caepath.mkdir(exist_ok=True, parents=True)
-        caepath = str(caepath / self.meta.caename)
+        taskfolder = Path(self.meta.caepath)
+        taskfolder.mkdir(exist_ok=True, parents=True)
+        caepath = str(taskfolder / self.meta.caename)
         return {
             "jobname": self.meta.jobname,
             "caepath": caepath,
+            "taskfolder": str(taskfolder),
             "modelname": self.meta.modelname,
             "submit": self.meta.submit,
         }
@@ -314,7 +315,7 @@ def main():
         "cae-" + format_time(),
         caepath,
         "model-" + format_time(),
-        False,
+        True,
     )
     geo = Geometry(150, 300, 1200, 6)
     roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1)
