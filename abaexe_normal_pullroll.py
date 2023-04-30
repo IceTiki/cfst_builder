@@ -97,13 +97,17 @@ class JsonTask:
     def data_pullroll(self):
         return self.data["pullroll"]
 
+    @property
+    def meta(self):
+        return self.data["meta"]
+
 
 json_task = JsonTask("C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\abatmp.json")
 
 
-caename = "demo10"
-caepath = "D:/Casual/T_%s/%s" % (caename, caename)
-jobname = "job-429-1132"
+caepath = json_task.meta["caepath"].encode("ascii")
+jobname = json_task.meta["jobname"].encode("ascii")
+modelname = json_task.meta["modelname"].encode("ascii")
 
 # ===abaqus初始化
 session.Viewport(
@@ -124,77 +128,78 @@ session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
 Mdb()
 mdb.close()
 Mdb()
+print(modelname)
+mdb.Model(name=modelname, modelType=STANDARD_EXPLICIT)
 #: 新的模型数据库已创建.
-#: 模型 "Model-1" 已创建.
+#: 模型 modelname 已创建.
 session.viewports["Viewport: 1"].setValues(displayedObject=None)
-# mdb.saveAs(pathName=caepath)
 
 # ===部件-混凝土
-s1 = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
+s1 = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
 g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
 s1.setPrimaryObject(option=STANDALONE)
 s1.rectangle(point1=(0.0, 0.0), point2=(json_task.width, json_task.high))
-p = mdb.models["Model-1"].Part(
+p = mdb.models[modelname].Part(
     name="concrete", dimensionality=THREE_D, type=DEFORMABLE_BODY
 )
-p = mdb.models["Model-1"].parts["concrete"]
+p = mdb.models[modelname].parts["concrete"]
 p.BaseSolidExtrude(sketch=s1, depth=json_task.length)
 s1.unsetPrimaryObject()
-p = mdb.models["Model-1"].parts["concrete"]
-del mdb.models["Model-1"].sketches["__profile__"]
+p = mdb.models[modelname].parts["concrete"]
+del mdb.models[modelname].sketches["__profile__"]
 
 # ===部件-钢管
-s = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
+s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
 g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
 s.setPrimaryObject(option=STANDALONE)
 s.rectangle(point1=(0.0, 0.0), point2=(json_task.width, json_task.high))
-p = mdb.models["Model-1"].Part(
+p = mdb.models[modelname].Part(
     name="tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
 )
-p = mdb.models["Model-1"].parts["tubelar"]
+p = mdb.models[modelname].parts["tubelar"]
 p.BaseShellExtrude(sketch=s, depth=json_task.length)
 s.unsetPrimaryObject()
-p = mdb.models["Model-1"].parts["tubelar"]
-del mdb.models["Model-1"].sketches["__profile__"]
+p = mdb.models[modelname].parts["tubelar"]
+del mdb.models[modelname].sketches["__profile__"]
 
 # ===材料-钢
-mdb.models["Model-1"].Material(name="steel_tube")
-mdb.models["Model-1"].materials["steel_tube"].Elastic(table=((206000.0, 0.25),))
-mdb.models["Model-1"].materials["steel_tube"].Plastic(
+mdb.models[modelname].Material(name="steel_tube")
+mdb.models[modelname].materials["steel_tube"].Elastic(table=((206000.0, 0.25),))
+mdb.models[modelname].materials["steel_tube"].Plastic(
     table=json_task.steel_plasticity_model
 )
 
 # ===创建材料-混凝土(要加个(0.0001, 0))
-mdb.models["Model-1"].Material(name="concrete")
-mdb.models["Model-1"].materials["concrete"].ConcreteDamagedPlasticity(
+mdb.models[modelname].Material(name="concrete")
+mdb.models[modelname].materials["concrete"].ConcreteDamagedPlasticity(
     table=((36.0, 0.1, 1.16, 0.63, 0.0005),)
 )
-mdb.models["Model-1"].materials[
+mdb.models[modelname].materials[
     "concrete"
 ].concreteDamagedPlasticity.ConcreteCompressionHardening(
     table=json_task.concrete_plasticity_model
 )
-mdb.models["Model-1"].materials[
+mdb.models[modelname].materials[
     "concrete"
 ].concreteDamagedPlasticity.ConcreteTensionStiffening(
     table=json_task.concrete_gfi, type=GFI
 )
-mdb.models["Model-1"].materials["concrete"].Elastic(table=((34500.0, 0.2),))
+mdb.models[modelname].materials["concrete"].Elastic(table=((34500.0, 0.2),))
 
 # ===创建材料-拉杆
-mdb.models["Model-1"].Material(name="steel_pullroll")
-mdb.models["Model-1"].materials["steel_pullroll"].Elastic(table=((200000.0, 0.25),))
-mdb.models["Model-1"].materials["steel_pullroll"].Plastic(
+mdb.models[modelname].Material(name="steel_pullroll")
+mdb.models[modelname].materials["steel_pullroll"].Elastic(table=((200000.0, 0.25),))
+mdb.models[modelname].materials["steel_pullroll"].Plastic(
     table=json_task.steelbar_plasticity_model
 )
 
 # ===创建截面-混凝土
-mdb.models["Model-1"].HomogeneousSolidSection(
+mdb.models[modelname].HomogeneousSolidSection(
     name="concrete", material="concrete", thickness=None
 )
 
 # ===创建截面-钢管
-mdb.models["Model-1"].HomogeneousShellSection(
+mdb.models[modelname].HomogeneousShellSection(
     name="tubelar",
     preIntegrate=OFF,
     material="steel_tube",
@@ -212,13 +217,13 @@ mdb.models["Model-1"].HomogeneousShellSection(
 )
 
 # ===指派截面-混凝土
-p = mdb.models["Model-1"].parts["concrete"]
+p = mdb.models[modelname].parts["concrete"]
 c = p.cells
 cells = c.getSequenceFromMask(
     mask=("[#1 ]",),
 )
 region = regionToolset.Region(cells=cells)
-p = mdb.models["Model-1"].parts["concrete"]
+p = mdb.models[modelname].parts["concrete"]
 p.SectionAssignment(
     region=region,
     sectionName="concrete",
@@ -229,13 +234,13 @@ p.SectionAssignment(
 )
 
 # ===指派截面-钢管
-p = mdb.models["Model-1"].parts["tubelar"]
+p = mdb.models[modelname].parts["tubelar"]
 f = p.faces
 faces = f.getSequenceFromMask(
     mask=("[#f ]",),
 )
 region = regionToolset.Region(faces=faces)
-p = mdb.models["Model-1"].parts["tubelar"]
+p = mdb.models[modelname].parts["tubelar"]
 p.SectionAssignment(
     region=region,
     sectionName="tubelar",
@@ -246,7 +251,7 @@ p.SectionAssignment(
 )
 
 # ===分析步
-mdb.models["Model-1"].StaticStep(
+mdb.models[modelname].StaticStep(
     name="Step-1",
     previous="Initial",
     maxNumInc=1000,
@@ -257,63 +262,61 @@ mdb.models["Model-1"].StaticStep(
 session.viewports["Viewport: 1"].assemblyDisplay.setValues(step="Step-1")
 
 # ===装配
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 
 a.DatumCsysByDefault(CARTESIAN)
-p = mdb.models["Model-1"].parts["concrete"]
+p = mdb.models[modelname].parts["concrete"]
 a.Instance(name="concrete-1", part=p, dependent=ON)
 
-p = mdb.models["Model-1"].parts["tubelar"]
+p = mdb.models[modelname].parts["tubelar"]
 a.Instance(name="tubelar-1", part=p, dependent=ON)
 
 
 # ===创建部件-拉杆X
-s = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=200.0)
+s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
 g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
 s.setPrimaryObject(option=STANDALONE)
 s.Line(point1=(0, json_task.high / 2), point2=(json_task.width, json_task.high / 2))
 s.HorizontalConstraint(entity=g[2], addUndoState=False)
-p = mdb.models["Model-1"].Part(
+p = mdb.models[modelname].Part(
     name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
 )
-p = mdb.models["Model-1"].parts["pullroll_x"]
+p = mdb.models[modelname].parts["pullroll_x"]
 p.BaseWire(sketch=s)
 s.unsetPrimaryObject()
-p = mdb.models["Model-1"].parts["pullroll_x"]
-del mdb.models["Model-1"].sketches["__profile__"]
+p = mdb.models[modelname].parts["pullroll_x"]
+del mdb.models[modelname].sketches["__profile__"]
 # ===创建部件-拉杆Y
-s1 = mdb.models["Model-1"].ConstrainedSketch(name="__profile__", sheetSize=200.0)
+s1 = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
 g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
 s1.setPrimaryObject(option=STANDALONE)
 s1.Line(point1=(json_task.width / 2, 0), point2=(json_task.width / 2, json_task.high))
 s1.VerticalConstraint(entity=g[2], addUndoState=False)
-p = mdb.models["Model-1"].Part(
+p = mdb.models[modelname].Part(
     name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
 )
-p = mdb.models["Model-1"].parts["pullroll_y"]
+p = mdb.models[modelname].parts["pullroll_y"]
 p.BaseWire(sketch=s1)
 s1.unsetPrimaryObject()
-p = mdb.models["Model-1"].parts["pullroll_y"]
-del mdb.models["Model-1"].sketches["__profile__"]
+p = mdb.models[modelname].parts["pullroll_y"]
+del mdb.models[modelname].sketches["__profile__"]
 
 # ===创建截面-拉杆X
-mdb.models["Model-1"].TrussSection(
+mdb.models[modelname].TrussSection(
     name="pullroll_x", material="steel_pullroll", area=json_task.data_pullroll["area"]
 )
 
 # ===创建截面-拉杆Y
-mdb.models["Model-1"].TrussSection(
-    name="pullroll_y", material="steel_pullroll", area=json_task.data_pullroll["area"]
-)
+mdb.models[modelname].TrussSection(name="pullroll_y", material="steel_pullroll", area=1)
 
 # ===指派截面-拉杆X
-p = mdb.models["Model-1"].parts["pullroll_x"]
+p = mdb.models[modelname].parts["pullroll_x"]
 e = p.edges
 edges = e.getSequenceFromMask(
     mask=("[#1 ]",),
 )
 region = regionToolset.Region(edges=edges)
-p = mdb.models["Model-1"].parts["pullroll_x"]
+p = mdb.models[modelname].parts["pullroll_x"]
 p.SectionAssignment(
     region=region,
     sectionName="pullroll_x",
@@ -324,13 +327,13 @@ p.SectionAssignment(
 )
 
 # ===指派截面-拉杆Y
-p = mdb.models["Model-1"].parts["pullroll_y"]
+p = mdb.models[modelname].parts["pullroll_y"]
 e = p.edges
 edges = e.getSequenceFromMask(
     mask=("[#1 ]",),
 )
 region = regionToolset.Region(edges=edges)
-p = mdb.models["Model-1"].parts["pullroll_y"]
+p = mdb.models[modelname].parts["pullroll_y"]
 p.SectionAssignment(
     region=region,
     sectionName="pullroll_y",
@@ -340,19 +343,19 @@ p.SectionAssignment(
     thicknessAssignment=FROM_SECTION,
 )
 # ===创建实例-拉杆
-p = mdb.models["Model-1"].parts["pullroll_x"]
+p = mdb.models[modelname].parts["pullroll_x"]
 a.Instance(name="pullroll_x-1", part=p, dependent=ON)
-p = mdb.models["Model-1"].parts["pullroll_y"]
+p = mdb.models[modelname].parts["pullroll_y"]
 a.Instance(name="pullroll_y-1", part=p, dependent=ON)
 # ===平移实例-拉杆
-a1 = mdb.models["Model-1"].rootAssembly
+a1 = mdb.models[modelname].rootAssembly
 a1.translate(
     instanceList=("pullroll_x-1", "pullroll_y-1"),
     vector=(0.0, 0.0, json_task.data_pullroll["start_shift"]),
 )
 #: The instances were translated by 0., 0., 150. (相对于装配坐标系)
 # ===线性阵列实例-拉杆
-a1 = mdb.models["Model-1"].rootAssembly
+a1 = mdb.models[modelname].rootAssembly
 pullroll_all = a1.LinearInstancePattern(
     instanceList=("pullroll_x-1",),
     direction1=(0.0, 0.0, 1.0),
@@ -374,7 +377,7 @@ pullroll_all += a1.LinearInstancePattern(
 )
 pullroll_all += (a1.instances["pullroll_y-1"],)
 # ===合并实例-拉杆
-a1 = mdb.models["Model-1"].rootAssembly
+a1 = mdb.models[modelname].rootAssembly
 a1.InstanceFromBooleanMerge(
     name="union",
     instances=pullroll_all + (a1.instances["tubelar-1"],),
@@ -386,9 +389,9 @@ a1.InstanceFromBooleanMerge(
 
 
 # ===创建参考点
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 feature_1 = a.ReferencePoint(point=json_task.referpoint_bottom)
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 feature_2 = a.ReferencePoint(point=json_task.referpoint_top)
 referpoint_bottom, referpoint_top = (
     a.referencePoints[feature_1.id],
@@ -396,7 +399,7 @@ referpoint_bottom, referpoint_top = (
 )
 
 # ===创建底面刚体
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 
 # f1 = a.instances["concrete-1"].faces
 # faces1 = f1.getSequenceFromMask(
@@ -427,18 +430,18 @@ edges2 = e2.findAt(
 
 
 region4 = regionToolset.Region(edges=edges2, faces=faces1)
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
 
 refPoints1 = (referpoint_bottom,)
 region1 = regionToolset.Region(referencePoints=refPoints1)
-mdb.models["Model-1"].RigidBody(
+mdb.models[modelname].RigidBody(
     name="ct_bottom", refPointRegion=region1, tieRegion=region4
 )
 
 
 # ===创建顶面刚体
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 f1 = a.instances["concrete-1"].faces
 faces1 = f1.findAt(
     coordinates=tuple(
@@ -458,21 +461,21 @@ edges2 = e2.findAt(
 )
 
 region4 = regionToolset.Region(edges=edges2, faces=faces1)
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
 refPoints1 = (referpoint_top,)
 region1 = regionToolset.Region(referencePoints=refPoints1)
-mdb.models["Model-1"].RigidBody(
+mdb.models[modelname].RigidBody(
     name="cp_top", refPointRegion=region1, tieRegion=region4
 )
 
 
 # ===边界条件-底部
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
 refPoints1 = (referpoint_bottom,)
 region = regionToolset.Region(referencePoints=refPoints1)
-mdb.models["Model-1"].DisplacementBC(
+mdb.models[modelname].DisplacementBC(
     name="bound_bottom",
     createStepName="Step-1",
     region=region,
@@ -490,17 +493,17 @@ mdb.models["Model-1"].DisplacementBC(
 )
 # PinnedBC 铰接
 # EncastreBC 固接
-# mdb.models["Model-1"].PinnedBC(
+# mdb.models[modelname].PinnedBC(
 #     name="bound_bottom", createStepName="Step-1", region=region, localCsys=None
 # )
 
 
 # ===边界条件-顶部
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
 refPoints1 = (referpoint_top,)
 region = regionToolset.Region(referencePoints=refPoints1)
-mdb.models["Model-1"].DisplacementBC(
+mdb.models[modelname].DisplacementBC(
     name="bound_top",
     createStepName="Step-1",
     region=region,
@@ -519,8 +522,8 @@ mdb.models["Model-1"].DisplacementBC(
 
 
 # ===创建相互作用属性-钢管-混凝土(硬接触和摩擦)
-mdb.models["Model-1"].ContactProperty("tube-concrete")
-mdb.models["Model-1"].interactionProperties["tube-concrete"].TangentialBehavior(
+mdb.models[modelname].ContactProperty("tube-concrete")
+mdb.models[modelname].interactionProperties["tube-concrete"].TangentialBehavior(
     formulation=PENALTY,
     directionality=ISOTROPIC,
     slipRateDependency=OFF,
@@ -533,24 +536,24 @@ mdb.models["Model-1"].interactionProperties["tube-concrete"].TangentialBehavior(
     fraction=0.005,
     elasticSlipStiffness=None,
 )
-mdb.models["Model-1"].interactionProperties["tube-concrete"].NormalBehavior(
+mdb.models[modelname].interactionProperties["tube-concrete"].NormalBehavior(
     pressureOverclosure=HARD, allowSeparation=ON, constraintEnforcementMethod=DEFAULT
 )
 
 # ===创建相互作用-钢管-混凝土
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 s1 = a.instances["union-1"].faces
 side2Faces1 = s1.getSequenceFromMask(
     mask=("[#f ]",),
 )
 region1 = regionToolset.Region(side2Faces=side2Faces1)
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 s1 = a.instances["concrete-1"].faces
 side1Faces1 = s1.getSequenceFromMask(
     mask=("[#f ]",),
 )
 region2 = regionToolset.Region(side1Faces=side1Faces1)
-mdb.models["Model-1"].SurfaceToSurfaceContactStd(
+mdb.models[modelname].SurfaceToSurfaceContactStd(
     name="steel-concrete",
     createStepName="Step-1",
     master=region1,
@@ -566,7 +569,7 @@ mdb.models["Model-1"].SurfaceToSurfaceContactStd(
 
 # ===单元类型-桁架
 elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
-p = mdb.models["Model-1"].parts["union"]
+p = mdb.models[modelname].parts["union"]
 e = p.edges
 edges = e.getSequenceFromMask(
     mask=("[#ffffffff #f ]",),
@@ -574,27 +577,27 @@ edges = e.getSequenceFromMask(
 pickedRegions = (edges,)
 p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
 # ===划分网格-union
-p = mdb.models["Model-1"].parts["union"]
+p = mdb.models[modelname].parts["union"]
 p.seedPart(size=70.0, deviationFactor=0.1, minSizeFactor=0.1)
-p = mdb.models["Model-1"].parts["union"]
+p = mdb.models[modelname].parts["union"]
 p.generateMesh()
 # ===划分网格-concrete
-p = mdb.models["Model-1"].parts["concrete"]
+p = mdb.models[modelname].parts["concrete"]
 p.seedPart(size=50.0, deviationFactor=0.1, minSizeFactor=0.1)
-p = mdb.models["Model-1"].parts["concrete"]
+p = mdb.models[modelname].parts["concrete"]
 p.generateMesh()
 
 
 # ===创建集
-a = mdb.models["Model-1"].rootAssembly
+a = mdb.models[modelname].rootAssembly
 r1 = a.referencePoints
 refPoints1 = (referpoint_top,)
 a.Set(referencePoints=refPoints1, name="RP-TOP")
 
 
 # ===历程输出
-regionDef = mdb.models["Model-1"].rootAssembly.sets["RP-TOP"]
-mdb.models["Model-1"].HistoryOutputRequest(
+regionDef = mdb.models[modelname].rootAssembly.sets["RP-TOP"]
+mdb.models[modelname].HistoryOutputRequest(
     name="TOP-OUTPUT",
     createStepName="Step-1",
     variables=(
@@ -619,7 +622,7 @@ mdb.models["Model-1"].HistoryOutputRequest(
 # ===生成作业
 mdb.Job(
     name=jobname,
-    model="Model-1",
+    model=modelname,
     description="",
     type=ANALYSIS,
     atTime=None,
@@ -642,6 +645,17 @@ mdb.Job(
     numCpus=7,
     numDomains=7,
     numGPUs=1,
+)
+# ===保存
+mdb.saveAs(pathName=caepath)
+
+# ===切换窗口
+a = mdb.models[modelname].rootAssembly
+a.regenerate()
+a = mdb.models[modelname].rootAssembly
+session.viewports["Viewport: 1"].setValues(displayedObject=a)
+session.viewports["Viewport: 1"].assemblyDisplay.setValues(
+    optimizationTasks=OFF, geometricRestrictions=OFF, stopConditions=OFF
 )
 
 # # ===提交

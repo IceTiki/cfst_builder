@@ -3,6 +3,8 @@ from matplotlib import pyplot as plt
 from dataclasses import dataclass
 from typing import Union
 import math
+import time, datetime
+from pathlib import Path
 
 from materlib import materials, constitutive_models
 from loguru import logger
@@ -70,8 +72,28 @@ class Pullroll:
 
 @dataclass
 class TaskMeta:
+    """
+
+    Parameters
+    ---
+    jobname : str
+        job名
+    caename : str
+        cae名称
+    caepath : str
+        cae路径
+    modelname : str
+        model名
+    submit : bool
+        是否提交作业
+    """
+
     jobname: str
     caename: str
+    caepath: str
+    modelname: str
+
+    submit: bool = False
 
 
 @dataclass
@@ -79,6 +101,8 @@ class AbaqusData:
     """
 
     Parameters
+    ---
+    meta : TaskMeta
     ---
     concrete : materials.Concrete
     steel : materials.Steel
@@ -97,6 +121,7 @@ class AbaqusData:
         MPa = N/mm^2
     """
 
+    meta: TaskMeta
     concrete: materials.Concrete
     steel: materials.Steel
     steelbar: materials.SteelBar
@@ -115,7 +140,7 @@ class AbaqusData:
         )
 
     @property
-    def json_tube(self, table_len: int = 50):
+    def json_tube(self, table_len: int = 10000):
         """钢管"""
         steel_model = constitutive_models.SteelTubelarConstitutiveModels(
             self.steel.strength_yield,
@@ -137,7 +162,7 @@ class AbaqusData:
         }
 
     @property
-    def json_steelbar(self, table_len: int = 50):
+    def json_steelbar(self, table_len: int = 10000):
         """约束拉杆"""
         steelbar_model = constitutive_models.PullrollConstitutiveModels(
             self.steelbar.strength_criterion_yield,
@@ -160,7 +185,7 @@ class AbaqusData:
         }
 
     @property
-    def json_core_concrete(self, table_len: int = 50):
+    def json_core_concrete(self, table_len: int = 10000):
         """核心混凝土"""
         concrete_core_strength = (
             self.concrete.strength_pressure * 1.25
@@ -245,6 +270,18 @@ class AbaqusData:
         }
 
     @property
+    def json_meta(self):
+        caepath = Path(self.meta.caepath)
+        caepath.mkdir(exist_ok=True, parents=True)
+        caepath = str(caepath / self.meta.caename)
+        return {
+            "jobname": self.meta.jobname,
+            "caepath": caepath,
+            "modelname": self.meta.modelname,
+            "submit": self.meta.submit,
+        }
+
+    @property
     def json_task(self):
         return {
             "materials": {
@@ -255,7 +292,15 @@ class AbaqusData:
             "geometry": self.json_geometry,
             "referpoint": self.json_referpoint,
             "pullroll": self.json_pullroll,
+            "meta": self.json_meta,
         }
+
+
+def format_time():
+    time_struct = time.localtime()
+    date_str = f"{time_struct.tm_year}-{time_struct.tm_mon}-{time_struct.tm_mday}"
+    time_str = f"{time_struct.tm_hour}-{time_struct.tm_min}-{time_struct.tm_sec}"
+    return f"{date_str}--{time_str}"
 
 
 @logger.catch
@@ -263,16 +308,24 @@ def main():
     concrete = materials.Concrete.from_table("C55")
     steel = materials.Steel.from_table("Q460")
     steelbar = materials.SteelBar.from_table("HRB400")
+    caepath = Path(r"D:\Casual\T_abaqus") / format_time()
+    meta = TaskMeta(
+        "job-" + format_time(),
+        "cae-" + format_time(),
+        caepath,
+        "model-" + format_time(),
+        False,
+    )
     geo = Geometry(150, 300, 1200, 6)
     roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1)
-    e = 0.333  # 偏心距
+    e = 0.133  # 偏心距
     rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -100, None, 0, 0])
     rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, 0, 0])
     # steel.strength_yield = 344.45
     # steelbar.strength_criterion_yield = 387.98
     # concrete.strength_criterion_pressure = 39.82
 
-    abadata = AbaqusData(concrete, steel, steelbar, geo, roll, rp_top, rp_bottom)
+    abadata = AbaqusData(meta, concrete, steel, steelbar, geo, roll, rp_top, rp_bottom)
     tt.JsonFile.write(
         abadata.json_task,
         "abatmp.json",
