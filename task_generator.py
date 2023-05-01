@@ -29,12 +29,18 @@ class Geometry:
         H, 柱高度(mm)
     tubelar_thickness : float
         t, 钢管厚度(mm)
+    concrete_mesh : float
+        混凝土布种数量(x,y,z)方向
+    steel_mesh : float
+        钢材布种数量(x,y,z)方向
     """
 
     width: float
     high: float
     deep: float
     tubelar_thickness: float
+    concrete_mesh: tuple[int, ...] = (6, 6, 10)
+    steel_mesh: tuple[int, ...] = (5, 5, 8)
 
 
 @dataclass
@@ -89,6 +95,8 @@ class TaskMeta:
         model名
     submit : bool
         是否提交作业
+    time_limit : float
+        作业最高运行时间
     """
 
     jobname: str
@@ -97,6 +105,7 @@ class TaskMeta:
     modelname: str
 
     submit: bool = False
+    time_limit: float = 3600
 
 
 @dataclass
@@ -243,6 +252,20 @@ class AbaqusData:
             "high": self.geometry.high,
             "length": self.geometry.deep,
             "tube_thickness": self.geometry.tubelar_thickness,
+            "concrete_seed": tuple(
+                j / i
+                for i, j in zip(
+                    self.geometry.concrete_mesh,
+                    (self.geometry.width, self.geometry.high, self.geometry.deep),
+                )
+            ),
+            "steel_seed": tuple(
+                j / i
+                for i, j in zip(
+                    self.geometry.steel_mesh,
+                    (self.geometry.width, self.geometry.high, self.geometry.deep),
+                )
+            ),
         }
 
     @property
@@ -284,6 +307,7 @@ class AbaqusData:
             "taskfolder": str(taskfolder),
             "modelname": self.meta.modelname,
             "submit": self.meta.submit,
+            "time_limit": self.meta.time_limit,
         }
 
     @property
@@ -310,37 +334,30 @@ def format_time():
 
 @logger.catch
 def main():
+    fm_time = format_time()
     concrete = materials.Concrete.from_table("C55")
     steel = materials.Steel.from_table("Q460")
     steelbar = materials.SteelBar.from_table("HRB400")
-    caepath = Path(r"D:\Casual\T_abaqus") / format_time()
+    caepath = Path(r"D:\Casual\T_abaqus") / fm_time
     meta = TaskMeta(
-        "job-" + format_time(),
-        "cae-" + format_time(),
+        "job-" + fm_time,
+        "cae-" + fm_time,
         caepath,
-        "model-" + format_time(),
+        "model-" + fm_time,
         True,
     )
-    geo = Geometry(300, 300, 1200, 6)
+
+    geo = Geometry(300, 300, 1200, 6, (6, 6, 12), (5, 5, 10))
     roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1, False)
     e = 0.2  # 偏心距
-    rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -100, None, 0, 0])
+    rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -200, None, 0, 0])
     rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, 0, 0])
-    # steel.strength_yield = 344.45
-    # steelbar.strength_criterion_yield = 387.98
-    # concrete.strength_criterion_pressure = 39.82
 
     abadata = AbaqusData(meta, concrete, steel, steelbar, geo, roll, rp_top, rp_bottom)
     tt.JsonFile.write(
         abadata.json_task,
         "abatmp.json",
     )
-    # plt.xscale("log")
-    # plt.yscale("log")
-    # plt.xlabel(r"$\varepsilon$ 伸长率 (1)")
-    # plt.ylabel(r"$\sigma$ 应力 (MPa)")
-    # plt.savefig("tmp.png", dpi=600)
-    # plt.show()
 
 
 if __name__ == "__main__":

@@ -4,9 +4,12 @@ from abaqusConstants import *
 from caeModules import *
 from caeModules import *
 from driverUtils import executeOnCaeStartup
+import math
 import json
 import io
 import time
+import os
+import traceback
 
 
 class JsonTask:
@@ -110,6 +113,53 @@ class JsonTask:
     def meta(self):
         return self.data["meta"]
 
+    @property
+    def concrete_seed(self):
+        return self.geometry["concrete_seed"]
+
+    @property
+    def steel_seed(self):
+        return self.geometry["steel_seed"]
+
+    @property
+    def gap(self):
+        return 5
+
+    @property
+    def edge_point(self):
+        return {
+            "bottom_all": (
+                (self.width / 2, 0, 0),
+                (self.width / 2, self.high, 0),
+                (0, self.high / 2, 0),
+                (self.width, self.high / 2, 0),
+            ),
+            "top_all": (
+                (self.width / 2, 0, self.length),
+                (self.width / 2, self.high, self.length),
+                (0, self.high / 2, self.length),
+                (self.width, self.high / 2, self.length),
+            ),
+            "x_all": (
+                (self.width / 2, 0, 0),
+                (self.width / 2, self.high, 0),
+                (self.width / 2, 0, self.length),
+                (self.width / 2, self.high, self.length),
+            ),
+            "y_all": (
+                (0, self.high / 2, 0),
+                (self.width, self.high / 2, 0),
+                (0, self.high / 2, self.length),
+                (self.width, self.high / 2, self.length),
+            ),
+            "z_all": (
+                (self.width, 0, self.length / 2),
+                (self.width, self.high, self.length / 2),
+                (0, self.high, self.length / 2),
+                (self.width, self.high, self.length / 2),
+            ),
+        }
+
 
 def task_execute(jtask):
     caepath = jtask.meta["caepath"].encode("ascii")
@@ -131,8 +181,6 @@ def task_execute(jtask):
     session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
         referenceRepresentation=ON
     )
-    Mdb()
-    mdb.close()
     Mdb()
     print(modelname)
     mdb.Model(name=modelname, modelType=STANDARD_EXPLICIT)
@@ -225,10 +273,7 @@ def task_execute(jtask):
     # ===指派截面-混凝土
     p = mdb.models[modelname].parts["concrete"]
     c = p.cells
-    cells = c.getSequenceFromMask(
-        mask=("[#1 ]",),
-    )
-    region = regionToolset.Region(cells=cells)
+    region = regionToolset.Region(cells=p.cells)
     p = mdb.models[modelname].parts["concrete"]
     p.SectionAssignment(
         region=region,
@@ -241,11 +286,7 @@ def task_execute(jtask):
 
     # ===指派截面-钢管
     p = mdb.models[modelname].parts["tubelar"]
-    f = p.faces
-    faces = f.getSequenceFromMask(
-        mask=("[#f ]",),
-    )
-    region = regionToolset.Region(faces=faces)
+    region = regionToolset.Region(faces=p.faces)
     p = mdb.models[modelname].parts["tubelar"]
     p.SectionAssignment(
         region=region,
@@ -322,11 +363,7 @@ def task_execute(jtask):
 
     # ===指派截面-拉杆X
     p = mdb.models[modelname].parts["pullroll_x"]
-    e = p.edges
-    edges = e.getSequenceFromMask(
-        mask=("[#1 ]",),
-    )
-    region = regionToolset.Region(edges=edges)
+    region = regionToolset.Region(edges=p.edges)
     p = mdb.models[modelname].parts["pullroll_x"]
     p.SectionAssignment(
         region=region,
@@ -339,11 +376,7 @@ def task_execute(jtask):
 
     # ===指派截面-拉杆Y
     p = mdb.models[modelname].parts["pullroll_y"]
-    e = p.edges
-    edges = e.getSequenceFromMask(
-        mask=("[#1 ]",),
-    )
-    region = regionToolset.Region(edges=edges)
+    region = regionToolset.Region(edges=p.edges)
     p = mdb.models[modelname].parts["pullroll_y"]
     p.SectionAssignment(
         region=region,
@@ -410,15 +443,6 @@ def task_execute(jtask):
     # ===创建底面刚体
     a = mdb.models[modelname].rootAssembly
 
-    # f1 = a.instances["concrete-1"].faces
-    # faces1 = f1.getSequenceFromMask(
-    #     mask=("[#20 ]",),
-    # )
-    # e2 = a.instances["union-1"].edges
-    # edges2 = e2.getSequenceFromMask(
-    #     mask=("[#0 #a440 ]",),
-    # )
-
     f1 = a.instances["concrete-1"].faces
     faces1 = f1.findAt(
         coordinates=tuple(
@@ -426,16 +450,7 @@ def task_execute(jtask):
         )
     )
     e2 = a.instances["union-1"].edges
-    edges2 = e2.findAt(
-        coordinates=tuple(
-            [
-                (jtask.width / 2, 0, 0),
-                (jtask.width / 2, jtask.high, 0),
-                (0, jtask.high / 2, 0),
-                (jtask.width, jtask.high / 2, 0),
-            ]
-        )
-    )
+    edges2 = e2.findAt(coordinates=jtask.edge_point["bottom_all"])
 
     region4 = regionToolset.Region(edges=edges2, faces=faces1)
     a = mdb.models[modelname].rootAssembly
@@ -456,16 +471,7 @@ def task_execute(jtask):
         )
     )
     e2 = a.instances["union-1"].edges
-    edges2 = e2.findAt(
-        coordinates=tuple(
-            [
-                (jtask.width / 2, 0, jtask.length),
-                (jtask.width / 2, jtask.high, jtask.length),
-                (0, jtask.high / 2, jtask.length),
-                (jtask.width, jtask.high / 2, jtask.length),
-            ]
-        )
-    )
+    edges2 = e2.findAt(coordinates=jtask.edge_point["top_all"])
 
     region4 = regionToolset.Region(edges=edges2, faces=faces1)
     a = mdb.models[modelname].rootAssembly
@@ -577,19 +583,42 @@ def task_execute(jtask):
     elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
     p = mdb.models[modelname].parts["union"]
     e = p.edges
-    edges = e.getSequenceFromMask(
-        mask=("[#ffffffff #f ]",),
+    edges = e.getByBoundingCylinder(
+        center1=(jtask.width / 2, jtask.high / 2, 0),
+        center2=(jtask.width / 2, jtask.high / 2, jtask.length),
+        radius=math.sqrt(jtask.width * jtask.width + jtask.high * jtask.high)
+        - jtask.gap,
     )
     pickedRegions = (edges,)
     p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
     # ===划分网格-union
     p = mdb.models[modelname].parts["union"]
-    p.seedPart(size=70.0, deviationFactor=0.1, minSizeFactor=0.1)
+    p.seedPart(size=jtask.steel_seed[0], deviationFactor=0.1, minSizeFactor=0.1)
+    e = p.edges
+    for i, j in zip(["x_all", "y_all", "z_all"], [0, 1, 2]):
+        pickedEdges = e.findAt(coordinates=jtask.edge_point[i])
+        p.seedEdgeBySize(
+            edges=pickedEdges,
+            size=jtask.steel_seed[j],
+            deviationFactor=0.1,
+            minSizeFactor=0.1,
+            constraint=FINER,
+        )
+
     p = mdb.models[modelname].parts["union"]
     p.generateMesh()
     # ===划分网格-concrete
     p = mdb.models[modelname].parts["concrete"]
-    p.seedPart(size=50.0, deviationFactor=0.1, minSizeFactor=0.1)
+    e = p.edges
+    for i, j in zip(["x_all", "y_all", "z_all"], [0, 1, 2]):
+        pickedEdges = e.findAt(coordinates=jtask.edge_point[i])
+        p.seedEdgeBySize(
+            edges=pickedEdges,
+            size=jtask.concrete_seed[j],
+            deviationFactor=0.1,
+            minSizeFactor=0.1,
+            constraint=FINER,
+        )
     p = mdb.models[modelname].parts["concrete"]
     p.generateMesh()
 
@@ -664,14 +693,43 @@ def task_execute(jtask):
 
     # ===提交
     if jtask.meta["submit"]:
+        # ===作业开始
         st_time = time.time()
-        mdb.jobs[jobname].submit()
-        mdb.jobs[jobname].waitForCompletion()
-        print("job running time(s):", time.time() - st_time)
+        try:
+            mdb.jobs[jobname].submit()
 
-        odb = list(session.odbs.values())
-        if odb:
-            odb = odb[0]
+            line = 5
+            job_running = True
+            stafile = "D:/Environment/Appdata/AbaqusData/Temp/%s.sta" % jobname
+            while job_running:
+                if os.path.isfile(stafile):
+                    with io.open(stafile, "rt", encoding="gbk") as f:
+                        f.seek(0, 0)
+                        status = f.read().splitlines()
+                        for i in range(line, len(status)):
+                            line_content = status[i]
+                            if "COMPLETED" in line_content:
+                                job_running = False
+                                break
+                            if time.time() - st_time > jtask.meta["time_limit"]:
+                                raise Exception("job time out")
+                            print(line_content)
+                            line += 1
+                time.sleep(3)
+            mdb.jobs[jobname].waitForCompletion()
+            print("job running time(s):", time.time() - st_time)
+        except Exception:
+            traceback.print_exc()
+            mdb.jobs[jobname].kill()
+
+        try:
+            odb = session.openOdb(
+                name=("D:/Environment/Appdata/AbaqusData/Temp/%s.odb" % jobname)
+                .decode("utf-8")
+                .encode("ascii")
+            )
+
+            # ===保存应力应变曲线
             xy0 = xyPlot.XYDataFromHistory(
                 odb=odb,
                 outputVariableName="Reaction force: RF3 PI: rootAssembly Node 2 in NSET RP-TOP",
@@ -702,6 +760,37 @@ def task_execute(jtask):
                 jtask.data,
                 jtask.meta["taskfolder"] + "\\task_data.json",
             )
+            print("json saved")
+
+            # ===保存动画
+            session.viewports["Viewport: 1"].odbDisplay.basicOptions.setValues(
+                renderShellThickness=ON
+            )
+            session.viewports["Viewport: 1"].setValues(displayedObject=odb)
+            session.viewports["Viewport: 1"].makeCurrent()
+            session.viewports["Viewport: 1"].odbDisplay.display.setValues(
+                plotState=(CONTOURS_ON_DEF,)
+            )
+            session.viewports["Viewport: 1"].animationController.setValues(
+                animationType=TIME_HISTORY
+            )
+            session.viewports["Viewport: 1"].animationController.play(
+                duration=UNLIMITED
+            )
+
+            session.imageAnimationOptions.setValues(
+                vpDecorations=ON, vpBackground=OFF, compass=OFF
+            )
+            avipath = jtask.meta["taskfolder"].replace("\\", "/") + "/animation.avi"
+            avipath = avipath.decode("utf-8").encode("ascii")
+            session.writeImageAnimation(
+                fileName=avipath,
+                format=AVI,
+                canvasObjects=(session.viewports["Viewport: 1"],),
+            )
+            print("animation saved")
+        except Exception:
+            traceback.print_exc()
 
 
 json_task = JsonTask("C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\abatmp.json")
