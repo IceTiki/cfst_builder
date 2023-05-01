@@ -56,5 +56,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # m = materials.Concrete.from_table("C30")
-    # tmp = 5.80107
+
