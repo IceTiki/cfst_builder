@@ -701,21 +701,24 @@ def task_execute(jtask):
             line = 5
             job_running = True
             stafile = "D:/Environment/Appdata/AbaqusData/Temp/%s.sta" % jobname
-            while job_running:
-                if os.path.isfile(stafile):
-                    with io.open(stafile, "rt", encoding="gbk") as f:
-                        f.seek(0, 0)
-                        status = f.read().splitlines()
-                        for i in range(line, len(status)):
-                            line_content = status[i]
-                            if "COMPLETED" in line_content:
-                                job_running = False
-                                break
-                            if time.time() - st_time > jtask.meta["time_limit"]:
-                                raise Exception("job time out")
-                            print(line_content)
-                            line += 1
-                time.sleep(3)
+            # ===输出status
+            while not os.path.isfile(stafile):
+                time.sleep(10)
+            with io.open(stafile, "rt", encoding="gbk") as f:
+                while job_running:
+                    f.seek(0, 0)
+                    status = f.read().splitlines()
+                    for i in range(line, len(status)):
+                        line_content = status[i]
+                        if "COMPLETED" in line_content:
+                            job_running = False
+                            break
+                        if time.time() - st_time > jtask.meta["time_limit"]:
+                            raise Exception("job time out")
+                        print(line_content)
+                        line += 1
+                    time.sleep(10)
+
             mdb.jobs[jobname].waitForCompletion()
             print("job running time(s):", time.time() - st_time)
         except Exception:
