@@ -10,6 +10,7 @@ import io
 import time
 import os
 import traceback
+import shutil
 
 
 class JsonTask:
@@ -186,7 +187,7 @@ def task_execute(jtask):
     mdb.Model(name=modelname, modelType=STANDARD_EXPLICIT)
     #: 新的模型数据库已创建.
     #: 模型 modelname 已创建.
-    session.viewports["Viewport: 1"].setValues(displayedObject=None)
+    del mdb.models["Model-1"]
 
     # ===部件-混凝土
     s1 = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
@@ -724,6 +725,26 @@ def task_execute(jtask):
         clearanceRegion=None,
     )
 
+    # ===相互作用-钢筋-混凝土
+    a1 = mdb.models[modelname].rootAssembly
+    e1 = a1.instances["union-1"].edges
+    edges1 = e1.getByBoundingCylinder(
+        center1=(jtask.width / 2, jtask.high / 2, 0),
+        center2=(jtask.width / 2, jtask.high / 2, jtask.length),
+        radius=math.sqrt(jtask.width * jtask.width + jtask.high * jtask.high)
+        - jtask.gap,
+    )
+    region1 = regionToolset.Region(edges=edges1)
+    mdb.models[modelname].EmbeddedRegion(
+        name="roll-concrete",
+        embeddedRegion=region1,
+        hostRegion=None,
+        weightFactorTolerance=1e-06,
+        absoluteTolerance=0.0,
+        fractionalTolerance=0.05,
+        toleranceMethod=BOTH,
+    )
+
     # ===单元类型-桁架
     elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
     p = mdb.models[modelname].parts["union"]
@@ -871,11 +892,12 @@ def task_execute(jtask):
             mdb.jobs[jobname].kill()
 
         try:
-            odb = session.openOdb(
-                name=("D:/Environment/Appdata/AbaqusData/Temp/%s.odb" % jobname)
+            odbpath = (
+                ("D:/Environment/Appdata/AbaqusData/Temp/%s.odb" % jobname)
                 .decode("utf-8")
                 .encode("ascii")
             )
+            odb = session.openOdb(name=odbpath)
 
             # ===保存应力应变曲线
             xy0 = xyPlot.XYDataFromHistory(
@@ -895,6 +917,7 @@ def task_execute(jtask):
 
             top_point_data = {
                 "sigma": [-i[1] for i in xy0],
+                "sigma(kN)": [-i[1] / 1000 for i in xy0],
                 "epsilon": [-i[1] / jtask.length for i in xy1],
                 "time": [i[0] for i in xy0],
             }
@@ -902,11 +925,11 @@ def task_execute(jtask):
             data = {"top_point": top_point_data}
             JsonTask.write_json(
                 data,
-                jtask.meta["taskfolder"] + "\\top_point_data.json",
+                jtask.meta["taskfolder"] + "\\result.json",
             )
             JsonTask.write_json(
                 jtask.data,
-                jtask.meta["taskfolder"] + "\\task_data.json",
+                jtask.meta["taskfolder"] + "\\input.json",
             )
             print("json saved")
 
@@ -937,6 +960,10 @@ def task_execute(jtask):
                 canvasObjects=(session.viewports["Viewport: 1"],),
             )
             print("animation saved")
+
+            # ===复制odb文件
+            shutil.copy(odbpath, jtask.meta["taskfolder"] + "\\%s.odb" % jobname)
+            print("odb copied")
         except Exception:
             traceback.print_exc()
 

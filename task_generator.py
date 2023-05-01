@@ -349,16 +349,16 @@ def main():
         "cae-" + fm_time,
         caepath,
         "model-" + fm_time,
-        False,
-        3600,
         True,
+        3600,
+        False,
     )
 
-    geo = Geometry(300, 300, 1200, 6, (6, 6, 12), (5, 5, 10))
+    geo = Geometry(150, 300, 1200, 6, (6, 6, 12), (5, 5, 10))
     roll = Pullroll(math.pi * (14 / 2) ** 2, 150, 1, False)
-    e = 0.2  # 偏心距
-    rp_top = ReferencePoint([0, geo.high * e, 0], [0, 0, -200, None, 0, 0])
-    rp_bottom = ReferencePoint([0, geo.high * e, 0], [0, 0, 0, None, 0, 0])
+    bar_e_0 = 0.233  # 偏心距
+    rp_top = ReferencePoint([0, geo.high * bar_e_0, 0], [0, 0, -100, None, 0, 0])
+    rp_bottom = ReferencePoint([0, geo.high * bar_e_0, 0], [0, 0, 0, None, 0, 0])
 
     abadata = AbaqusData(meta, concrete, steel, steelbar, geo, roll, rp_top, rp_bottom)
     tt.JsonFile.write(
@@ -366,6 +366,10 @@ def main():
         "abatmp.json",
     )
 
+    markdown_table = f"""| 试件编号 | $D\\times B \\times L\\times t $        | $a_s \\times b_s \\times d_s$ | $\\bar e_0$ | 钢管钢材 | 拉杆钢筋 | 混凝土标号 |
+| -------- | ------------------------------------ | --------------------------- | ---------- | -------- | -------- | ---------- |
+|          | $ {geo.high}\\times {geo.width} \\times {geo.deep} \\times {geo.tubelar_thickness}$ | ${roll.distance}\\times {geo.high / roll.number} \\times {math.sqrt(roll.area/math.pi)}$   | ${bar_e_0}$    | ${steel.grade}$ | ${steelbar.grade}$ | ${concrete.grade}$    |"""
+    print(markdown_table)
 
 if __name__ == "__main__":
     main()
