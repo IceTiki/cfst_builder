@@ -306,7 +306,11 @@ def task_execute(jtask):
         minInc=1e-07,
         nlgeom=ON,
     )
-    session.viewports["Viewport: 1"].assemblyDisplay.setValues(step="Step-1")
+    mdb.models[modelname].steps["Step-1"].setValues(
+        stabilizationMethod=DISSIPATED_ENERGY_FRACTION,
+        continueDampingFactors=True,
+        adaptiveDampingRatio=0.05,
+    )
 
     # ===装配
     a = mdb.models[modelname].rootAssembly
@@ -318,33 +322,117 @@ def task_execute(jtask):
     p = mdb.models[modelname].parts["tubelar"]
     a.Instance(name="tubelar-1", part=p, dependent=ON)
 
-    # ===创建部件-拉杆X
+    if not jtask.meta["ushape"]:
+        # ===创建部件-拉杆X
+        s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
+        g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
+        s.setPrimaryObject(option=STANDALONE)
+        s.Line(point1=(0, jtask.high / 2), point2=(jtask.width, jtask.high / 2))
+        s.HorizontalConstraint(entity=g[2], addUndoState=False)
+        p = mdb.models[modelname].Part(
+            name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        )
+        p = mdb.models[modelname].parts["pullroll_x"]
+        p.BaseWire(sketch=s)
+        s.unsetPrimaryObject()
+        p = mdb.models[modelname].parts["pullroll_x"]
+        del mdb.models[modelname].sketches["__profile__"]
+        # ===创建部件-拉杆Y
+        s1 = mdb.models[modelname].ConstrainedSketch(
+            name="__profile__", sheetSize=200.0
+        )
+        g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
+        s1.setPrimaryObject(option=STANDALONE)
+        s1.Line(point1=(jtask.width / 2, 0), point2=(jtask.width / 2, jtask.high))
+        s1.VerticalConstraint(entity=g[2], addUndoState=False)
+        p = mdb.models[modelname].Part(
+            name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        )
+        p = mdb.models[modelname].parts["pullroll_y"]
+        p.BaseWire(sketch=s1)
+        s1.unsetPrimaryObject()
+        p = mdb.models[modelname].parts["pullroll_y"]
+        del mdb.models[modelname].sketches["__profile__"]
+    else:
+        # ===创建部件-拉杆X
+        s1 = mdb.models[modelname].ConstrainedSketch(
+            name="__profile__", sheetSize=200.0
+        )
+        g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
+        s1.setPrimaryObject(option=STANDALONE)
+        s1.Line(
+            point1=(0, jtask.high / 2 + jtask.gap),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        s1.Line(
+            point1=(0, jtask.high / 2 - jtask.gap),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        s1.Line(
+            point1=(jtask.width, jtask.high / 2 + jtask.gap),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        s1.Line(
+            point1=(jtask.width, jtask.high / 2 - jtask.gap),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        p = mdb.models[modelname].Part(
+            name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        )
+        p = mdb.models[modelname].parts["pullroll_x"]
+        p.BaseWire(sketch=s1)
+        s1.unsetPrimaryObject()
+        p = mdb.models[modelname].parts["pullroll_x"]
+        del mdb.models[modelname].sketches["__profile__"]
+
+        # ===创建部件-拉杆Y
+        s1 = mdb.models[modelname].ConstrainedSketch(
+            name="__profile__", sheetSize=200.0
+        )
+        g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
+        s1.setPrimaryObject(option=STANDALONE)
+        s1.Line(
+            point1=(jtask.width / 2 + jtask.gap, 0),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        s1.Line(
+            point1=(jtask.width / 2 - jtask.gap, 0),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        s1.Line(
+            point1=(jtask.width / 2 + jtask.gap, jtask.high),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        s1.Line(
+            point1=(jtask.width / 2 - jtask.gap, jtask.high),
+            point2=(jtask.width / 2, jtask.high / 2),
+        )
+        p = mdb.models[modelname].Part(
+            name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        )
+        p = mdb.models[modelname].parts["pullroll_y"]
+        p.BaseWire(sketch=s1)
+        s1.unsetPrimaryObject()
+        p = mdb.models[modelname].parts["pullroll_y"]
+        session.viewports["Viewport: 1"].setValues(displayedObject=p)
+        del mdb.models[modelname].sketches["__profile__"]
+
+    # ===创建部件-中心立杆
     s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
     g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
     s.setPrimaryObject(option=STANDALONE)
-    s.Line(point1=(0, jtask.high / 2), point2=(jtask.width, jtask.high / 2))
+    s.Line(
+        point1=(jtask.width / 2, jtask.high / 2),
+        point2=(jtask.width / 2 + jtask.length, jtask.high / 2),
+    )
     s.HorizontalConstraint(entity=g[2], addUndoState=False)
     p = mdb.models[modelname].Part(
-        name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        name="center_roll", dimensionality=THREE_D, type=DEFORMABLE_BODY
     )
-    p = mdb.models[modelname].parts["pullroll_x"]
+    p = mdb.models[modelname].parts["center_roll"]
     p.BaseWire(sketch=s)
     s.unsetPrimaryObject()
-    p = mdb.models[modelname].parts["pullroll_x"]
-    del mdb.models[modelname].sketches["__profile__"]
-    # ===创建部件-拉杆Y
-    s1 = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
-    g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
-    s1.setPrimaryObject(option=STANDALONE)
-    s1.Line(point1=(jtask.width / 2, 0), point2=(jtask.width / 2, jtask.high))
-    s1.VerticalConstraint(entity=g[2], addUndoState=False)
-    p = mdb.models[modelname].Part(
-        name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
-    )
-    p = mdb.models[modelname].parts["pullroll_y"]
-    p.BaseWire(sketch=s1)
-    s1.unsetPrimaryObject()
-    p = mdb.models[modelname].parts["pullroll_y"]
+    p = mdb.models[modelname].parts["center_roll"]
     del mdb.models[modelname].sketches["__profile__"]
 
     # ===创建截面-拉杆X
@@ -359,6 +447,13 @@ def task_execute(jtask):
         name="pullroll_y",
         material="steel_pullroll",
         area=1 if jtask.data_pullroll["only_x"] else jtask.data_pullroll["area"],
+    )
+
+    # ===创建截面-中心立杆
+    mdb.models[modelname].TrussSection(
+        name="center_roll",
+        material="steel_pullroll",
+        area=100,
     )
 
     # ===指派截面-拉杆X
@@ -386,6 +481,20 @@ def task_execute(jtask):
         offsetField="",
         thicknessAssignment=FROM_SECTION,
     )
+
+    # ===指派截面-中心立杆
+    p = mdb.models[modelname].parts["center_roll"]
+    region = regionToolset.Region(edges=p.edges)
+    p = mdb.models[modelname].parts["center_roll"]
+    p.SectionAssignment(
+        region=region,
+        sectionName="center_roll",
+        offset=0.0,
+        offsetType=MIDDLE_SURFACE,
+        offsetField="",
+        thicknessAssignment=FROM_SECTION,
+    )
+
     # ===创建实例-拉杆
     p = mdb.models[modelname].parts["pullroll_x"]
     a.Instance(name="pullroll_x-1", part=p, dependent=ON)
@@ -399,7 +508,7 @@ def task_execute(jtask):
     )
     # ===线性阵列实例-拉杆
     a1 = mdb.models[modelname].rootAssembly
-    pullroll_all = a1.LinearInstancePattern(
+    steel_union = a1.LinearInstancePattern(
         instanceList=("pullroll_x-1",),
         direction1=(0.0, 0.0, 1.0),
         direction2=(0.0, 1.0, 0.0),
@@ -408,8 +517,8 @@ def task_execute(jtask):
         spacing1=jtask.data_pullroll["distance"],
         spacing2=300.0,
     )
-    pullroll_all += (a1.instances["pullroll_x-1"],)
-    pullroll_all += a1.LinearInstancePattern(
+    steel_union += (a1.instances["pullroll_x-1"],)
+    steel_union += a1.LinearInstancePattern(
         instanceList=("pullroll_y-1",),
         direction1=(0.0, 0.0, 1.0),
         direction2=(0.0, 1.0, 0.0),
@@ -418,12 +527,28 @@ def task_execute(jtask):
         spacing1=jtask.data_pullroll["distance"],
         spacing2=300.0,
     )
-    pullroll_all += (a1.instances["pullroll_y-1"],)
+    steel_union += (a1.instances["pullroll_y-1"],)
+
+    if jtask.meta["ushape"]:
+        # ===创建实例-中心立杆
+        a1 = mdb.models[modelname].rootAssembly
+        p = mdb.models[modelname].parts["center_roll"]
+        a1.Instance(name="center_roll-1", part=p, dependent=ON)
+        # ===旋转实例-中心立杆
+        a1 = mdb.models[modelname].rootAssembly
+        a1.rotate(
+            instanceList=("center_roll-1",),
+            axisPoint=(jtask.width / 2, jtask.high / 2, 0.0),
+            axisDirection=(0.0, jtask.high / 2, 0.0),
+            angle=-90.0,
+        )
+        steel_union += (a1.instances["center_roll-1"],)
+
     # ===合并实例-拉杆
     a1 = mdb.models[modelname].rootAssembly
     a1.InstanceFromBooleanMerge(
         name="union",
-        instances=pullroll_all + (a1.instances["tubelar-1"],),
+        instances=steel_union + (a1.instances["tubelar-1"],),
         originalInstances=DELETE,
         mergeNodes=BOUNDARY_ONLY,
         nodeMergingTolerance=1e-06,
@@ -452,7 +577,17 @@ def task_execute(jtask):
     e2 = a.instances["union-1"].edges
     edges2 = e2.findAt(coordinates=jtask.edge_point["bottom_all"])
 
-    region4 = regionToolset.Region(edges=edges2, faces=faces1)
+    if jtask.meta["ushape"]:
+        v1 = a.instances["union-1"].vertices
+        vert1 = v1.findAt(
+            coordinates=tuple(
+                [(jtask.width / 2, jtask.high / 2, 0)],
+            )
+        )
+        region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
+    else:
+        region4 = regionToolset.Region(edges=edges2, faces=faces1)
+
     a = mdb.models[modelname].rootAssembly
     r1 = a.referencePoints
 
@@ -473,7 +608,17 @@ def task_execute(jtask):
     e2 = a.instances["union-1"].edges
     edges2 = e2.findAt(coordinates=jtask.edge_point["top_all"])
 
-    region4 = regionToolset.Region(edges=edges2, faces=faces1)
+    if jtask.meta["ushape"]:
+        v1 = a.instances["union-1"].vertices
+        vert1 = v1.findAt(
+            coordinates=tuple(
+                [(jtask.width / 2, jtask.high / 2, jtask.length)],
+            )
+        )
+        region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
+    else:
+        region4 = regionToolset.Region(edges=edges2, faces=faces1)
+
     a = mdb.models[modelname].rootAssembly
     r1 = a.referencePoints
     refPoints1 = (referpoint_top,)

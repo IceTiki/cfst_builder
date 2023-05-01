@@ -97,6 +97,8 @@ class TaskMeta:
         是否提交作业
     time_limit : float
         作业最高运行时间
+    ushape : bool
+        是否为U型连接件
     """
 
     jobname: str
@@ -106,6 +108,8 @@ class TaskMeta:
 
     submit: bool = False
     time_limit: float = 3600
+
+    ushape: bool = True
 
 
 @dataclass
@@ -308,6 +312,7 @@ class AbaqusData:
             "modelname": self.meta.modelname,
             "submit": self.meta.submit,
             "time_limit": self.meta.time_limit,
+            "ushape": self.meta.ushape,
         }
 
     @property
@@ -344,6 +349,8 @@ def main():
         "cae-" + fm_time,
         caepath,
         "model-" + fm_time,
+        False,
+        3600,
         True,
     )
 
