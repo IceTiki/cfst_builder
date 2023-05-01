@@ -886,7 +886,8 @@ def task_execute(jtask):
                     time.sleep(10)
 
             mdb.jobs[jobname].waitForCompletion()
-            print("job running time(s):", time.time() - st_time)
+            job_time = time.time() - st_time
+            print("job running time(s):", job_time)
         except Exception:
             traceback.print_exc()
             mdb.jobs[jobname].kill()
@@ -922,7 +923,7 @@ def task_execute(jtask):
                 "time": [i[0] for i in xy0],
             }
 
-            data = {"top_point": top_point_data}
+            data = {"top_point": top_point_data, "time_used": job_time}
             JsonTask.write_json(
                 data,
                 jtask.meta["taskfolder"] + "\\result.json",
