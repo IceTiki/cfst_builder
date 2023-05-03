@@ -47,7 +47,7 @@ class JsonTask:
     def concrete_gfi(self):
         return (
             (
-                self.materials["concrete"]["strength_tensile"],
+                self.materials["concrete"]["strength_fracture"],
                 self.materials["concrete"]["gfi"],
             ),
         )
@@ -67,16 +67,16 @@ class JsonTask:
         return self.data["geometry"]
 
     @property
-    def width(self):
-        return self.geometry["width"]
+    def x_len(self):
+        return self.geometry["x_len"]
 
     @property
-    def high(self):
-        return self.geometry["high"]
+    def y_len(self):
+        return self.geometry["y_len"]
 
     @property
-    def length(self):
-        return self.geometry["length"]
+    def z_len(self):
+        return self.geometry["z_len"]
 
     @property
     def tube_thickness(self):
@@ -86,12 +86,12 @@ class JsonTask:
     @property
     def referpoint_bottom(self):
         rp = self.data["referpoint"]["bottom"]["shift"]
-        return (self.width / 2 + rp[0], self.high / 2 + rp[1], rp[2])
+        return (self.x_len / 2 + rp[0], self.y_len / 2 + rp[1], rp[2])
 
     @property
     def referpoint_top(self):
         rp = self.data["referpoint"]["top"]["shift"]
-        return (self.width / 2 + rp[0], self.high / 2 + rp[1], self.length + rp[2])
+        return (self.x_len / 2 + rp[0], self.y_len / 2 + rp[1], self.z_len + rp[2])
 
     # ===约束
     @property
@@ -124,40 +124,40 @@ class JsonTask:
 
     @property
     def gap(self):
-        return 5
+        return 1
 
     @property
     def edge_point(self):
         return {
             "bottom_all": (
-                (self.width / 2, 0, 0),
-                (self.width / 2, self.high, 0),
-                (0, self.high / 2, 0),
-                (self.width, self.high / 2, 0),
+                (self.x_len / 2, 0, 0),
+                (self.x_len / 2, self.y_len, 0),
+                (0, self.y_len / 2, 0),
+                (self.x_len, self.y_len / 2, 0),
             ),
             "top_all": (
-                (self.width / 2, 0, self.length),
-                (self.width / 2, self.high, self.length),
-                (0, self.high / 2, self.length),
-                (self.width, self.high / 2, self.length),
+                (self.x_len / 2, 0, self.z_len),
+                (self.x_len / 2, self.y_len, self.z_len),
+                (0, self.y_len / 2, self.z_len),
+                (self.x_len, self.y_len / 2, self.z_len),
             ),
             "x_all": (
-                (self.width / 2, 0, 0),
-                (self.width / 2, self.high, 0),
-                (self.width / 2, 0, self.length),
-                (self.width / 2, self.high, self.length),
+                (self.x_len / 2, 0, 0),
+                (self.x_len / 2, self.y_len, 0),
+                (self.x_len / 2, 0, self.z_len),
+                (self.x_len / 2, self.y_len, self.z_len),
             ),
             "y_all": (
-                (0, self.high / 2, 0),
-                (self.width, self.high / 2, 0),
-                (0, self.high / 2, self.length),
-                (self.width, self.high / 2, self.length),
+                (0, self.y_len / 2, 0),
+                (self.x_len, self.y_len / 2, 0),
+                (0, self.y_len / 2, self.z_len),
+                (self.x_len, self.y_len / 2, self.z_len),
             ),
             "z_all": (
-                (self.width, 0, self.length / 2),
-                (self.width, self.high, self.length / 2),
-                (0, self.high, self.length / 2),
-                (self.width, self.high, self.length / 2),
+                (self.x_len, 0, self.z_len / 2),
+                (self.x_len, self.y_len, self.z_len / 2),
+                (0, self.y_len, self.z_len / 2),
+                (self.x_len, self.y_len, self.z_len / 2),
             ),
         }
 
@@ -193,28 +193,34 @@ def task_execute(jtask):
     s1 = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
     g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
     s1.setPrimaryObject(option=STANDALONE)
-    s1.rectangle(point1=(0.0, 0.0), point2=(jtask.width, jtask.high))
+    s1.rectangle(point1=(0.0, 0.0), point2=(jtask.x_len, jtask.y_len))
     p = mdb.models[modelname].Part(
         name="concrete", dimensionality=THREE_D, type=DEFORMABLE_BODY
     )
     p = mdb.models[modelname].parts["concrete"]
-    p.BaseSolidExtrude(sketch=s1, depth=jtask.length)
+    p.BaseSolidExtrude(sketch=s1, depth=jtask.z_len)
     s1.unsetPrimaryObject()
     p = mdb.models[modelname].parts["concrete"]
     del mdb.models[modelname].sketches["__profile__"]
 
     # ===部件-钢管
+    tubelar_name = (
+        "tubelar"
+        if (jtask.data_pullroll["x_exist"] or jtask.data_pullroll["y_exist"])
+        else "union"
+    )
+
     s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=10000.0)
     g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
     s.setPrimaryObject(option=STANDALONE)
-    s.rectangle(point1=(0.0, 0.0), point2=(jtask.width, jtask.high))
+    s.rectangle(point1=(0.0, 0.0), point2=(jtask.x_len, jtask.y_len))
     p = mdb.models[modelname].Part(
-        name="tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        name=tubelar_name, dimensionality=THREE_D, type=DEFORMABLE_BODY
     )
-    p = mdb.models[modelname].parts["tubelar"]
-    p.BaseShellExtrude(sketch=s, depth=jtask.length)
+    p = mdb.models[modelname].parts[tubelar_name]
+    p.BaseShellExtrude(sketch=s, depth=jtask.z_len)
     s.unsetPrimaryObject()
-    p = mdb.models[modelname].parts["tubelar"]
+    p = mdb.models[modelname].parts[tubelar_name]
     del mdb.models[modelname].sketches["__profile__"]
 
     # ===材料-钢
@@ -224,7 +230,7 @@ def task_execute(jtask):
         table=jtask.steel_plasticity_model
     )
 
-    # ===创建材料-混凝土(要加个(0.0001, 0))
+    # ===创建材料-混凝土
     mdb.models[modelname].Material(name="concrete")
     mdb.models[modelname].materials["concrete"].ConcreteDamagedPlasticity(
         table=((36.0, 0.1, 1.16, 0.63, 0.0005),)
@@ -255,7 +261,7 @@ def task_execute(jtask):
 
     # ===创建截面-钢管
     mdb.models[modelname].HomogeneousShellSection(
-        name="tubelar",
+        name=tubelar_name,
         preIntegrate=OFF,
         material="steel_tube",
         thicknessType=UNIFORM,
@@ -286,12 +292,12 @@ def task_execute(jtask):
     )
 
     # ===指派截面-钢管
-    p = mdb.models[modelname].parts["tubelar"]
+    p = mdb.models[modelname].parts[tubelar_name]
     region = regionToolset.Region(faces=p.faces)
-    p = mdb.models[modelname].parts["tubelar"]
+    p = mdb.models[modelname].parts[tubelar_name]
     p.SectionAssignment(
         region=region,
-        sectionName="tubelar",
+        sectionName=tubelar_name,
         offset=0.0,
         offsetType=BOTTOM_SURFACE,
         offsetField="",
@@ -316,19 +322,21 @@ def task_execute(jtask):
     # ===装配
     a = mdb.models[modelname].rootAssembly
 
+    # ===创建混凝土
     a.DatumCsysByDefault(CARTESIAN)
     p = mdb.models[modelname].parts["concrete"]
     a.Instance(name="concrete-1", part=p, dependent=ON)
 
-    p = mdb.models[modelname].parts["tubelar"]
-    a.Instance(name="tubelar-1", part=p, dependent=ON)
+    # ===创建钢管
+    p = mdb.models[modelname].parts[tubelar_name]
+    a.Instance(name="%s-1" % tubelar_name, part=p, dependent=ON)
 
-    if not jtask.meta["ushape"]:
+    if not jtask.data_pullroll["ushape"]:
         # ===创建部件-拉杆X
         s = mdb.models[modelname].ConstrainedSketch(name="__profile__", sheetSize=200.0)
         g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
         s.setPrimaryObject(option=STANDALONE)
-        s.Line(point1=(0, jtask.high / 2), point2=(jtask.width, jtask.high / 2))
+        s.Line(point1=(0, 0), point2=(jtask.x_len, 0))
         s.HorizontalConstraint(entity=g[2], addUndoState=False)
         p = mdb.models[modelname].Part(
             name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
@@ -344,7 +352,7 @@ def task_execute(jtask):
         )
         g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
         s1.setPrimaryObject(option=STANDALONE)
-        s1.Line(point1=(jtask.width / 2, 0), point2=(jtask.width / 2, jtask.high))
+        s1.Line(point1=(0, 0), point2=(0, jtask.y_len))
         s1.VerticalConstraint(entity=g[2], addUndoState=False)
         p = mdb.models[modelname].Part(
             name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
@@ -355,27 +363,27 @@ def task_execute(jtask):
         p = mdb.models[modelname].parts["pullroll_y"]
         del mdb.models[modelname].sketches["__profile__"]
     else:
-        # ===创建部件-拉杆X
+        # ===创建部件-拉杆x
         s1 = mdb.models[modelname].ConstrainedSketch(
             name="__profile__", sheetSize=200.0
         )
         g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
         s1.setPrimaryObject(option=STANDALONE)
         s1.Line(
-            point1=(0, jtask.high / 2 + jtask.gap),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(0, jtask.gap),
+            point2=(jtask.x_len / 2, 0),
         )
         s1.Line(
-            point1=(0, jtask.high / 2 - jtask.gap),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(0, 0 - jtask.gap),
+            point2=(jtask.x_len / 2, 0),
         )
         s1.Line(
-            point1=(jtask.width, jtask.high / 2 + jtask.gap),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(jtask.x_len, 0 + jtask.gap),
+            point2=(jtask.x_len / 2, 0),
         )
         s1.Line(
-            point1=(jtask.width, jtask.high / 2 - jtask.gap),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(jtask.x_len, 0 - jtask.gap),
+            point2=(jtask.x_len / 2, 0),
         )
         p = mdb.models[modelname].Part(
             name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
@@ -386,27 +394,27 @@ def task_execute(jtask):
         p = mdb.models[modelname].parts["pullroll_x"]
         del mdb.models[modelname].sketches["__profile__"]
 
-        # ===创建部件-拉杆Y
+        # ===创建部件-拉杆y
         s1 = mdb.models[modelname].ConstrainedSketch(
             name="__profile__", sheetSize=200.0
         )
         g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
         s1.setPrimaryObject(option=STANDALONE)
         s1.Line(
-            point1=(jtask.width / 2 + jtask.gap, 0),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(0 + jtask.gap, 0),
+            point2=(0, jtask.y_len / 2),
         )
         s1.Line(
-            point1=(jtask.width / 2 - jtask.gap, 0),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(0 - jtask.gap, 0),
+            point2=(0, jtask.y_len / 2),
         )
         s1.Line(
-            point1=(jtask.width / 2 + jtask.gap, jtask.high),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(0 + jtask.gap, jtask.y_len),
+            point2=(0, jtask.y_len / 2),
         )
         s1.Line(
-            point1=(jtask.width / 2 - jtask.gap, jtask.high),
-            point2=(jtask.width / 2, jtask.high / 2),
+            point1=(0 - jtask.gap, jtask.y_len),
+            point2=(0, jtask.y_len / 2),
         )
         p = mdb.models[modelname].Part(
             name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
@@ -423,8 +431,8 @@ def task_execute(jtask):
     g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
     s.setPrimaryObject(option=STANDALONE)
     s.Line(
-        point1=(jtask.width / 2, jtask.high / 2),
-        point2=(jtask.width / 2 + jtask.length, jtask.high / 2),
+        point1=(0, 0),
+        point2=(jtask.z_len, 0),
     )
     s.HorizontalConstraint(entity=g[2], addUndoState=False)
     p = mdb.models[modelname].Part(
@@ -447,14 +455,14 @@ def task_execute(jtask):
     mdb.models[modelname].TrussSection(
         name="pullroll_y",
         material="steel_pullroll",
-        area=1 if jtask.data_pullroll["only_x"] else jtask.data_pullroll["area"],
+        area=jtask.data_pullroll["area"],
     )
 
     # ===创建截面-中心立杆
     mdb.models[modelname].TrussSection(
         name="center_roll",
         material="steel_pullroll",
-        area=100,
+        area=jtask.data_pullroll["area"],
     )
 
     # ===指派截面-拉杆X
@@ -496,65 +504,117 @@ def task_execute(jtask):
         thicknessAssignment=FROM_SECTION,
     )
 
-    # ===创建实例-拉杆
-    p = mdb.models[modelname].parts["pullroll_x"]
-    a.Instance(name="pullroll_x-1", part=p, dependent=ON)
-    p = mdb.models[modelname].parts["pullroll_y"]
-    a.Instance(name="pullroll_y-1", part=p, dependent=ON)
-    # ===平移实例-拉杆
-    a1 = mdb.models[modelname].rootAssembly
-    a1.translate(
-        instanceList=("pullroll_x-1", "pullroll_y-1"),
-        vector=(0.0, 0.0, jtask.data_pullroll["start_shift"]),
-    )
-    # ===线性阵列实例-拉杆
-    a1 = mdb.models[modelname].rootAssembly
-    steel_union = a1.LinearInstancePattern(
-        instanceList=("pullroll_x-1",),
-        direction1=(0.0, 0.0, 1.0),
-        direction2=(0.0, 1.0, 0.0),
-        number1=jtask.data_pullroll["number_z"],
-        number2=1,
-        spacing1=jtask.data_pullroll["distance"],
-        spacing2=300.0,
-    )
-    steel_union += (a1.instances["pullroll_x-1"],)
-    steel_union += a1.LinearInstancePattern(
-        instanceList=("pullroll_y-1",),
-        direction1=(0.0, 0.0, 1.0),
-        direction2=(0.0, 1.0, 0.0),
-        number1=jtask.data_pullroll["number_z"],
-        number2=1,
-        spacing1=jtask.data_pullroll["distance"],
-        spacing2=300.0,
-    )
-    steel_union += (a1.instances["pullroll_y-1"],)
+    steel_union = tuple()
 
-    if jtask.meta["ushape"]:
-        # ===创建实例-中心立杆
-        a1 = mdb.models[modelname].rootAssembly
-        p = mdb.models[modelname].parts["center_roll"]
-        a1.Instance(name="center_roll-1", part=p, dependent=ON)
-        # ===旋转实例-中心立杆
-        a1 = mdb.models[modelname].rootAssembly
-        a1.rotate(
-            instanceList=("center_roll-1",),
-            axisPoint=(jtask.width / 2, jtask.high / 2, 0.0),
-            axisDirection=(0.0, jtask.high / 2, 0.0),
-            angle=-90.0,
-        )
-        steel_union += (a1.instances["center_roll-1"],)
+    # ===拉杆
+    for orientation in ("x", "y"):
+        """拉杆方向"""
+        orientation_union = tuple()
+        if jtask.data_pullroll["%s_exist" % orientation]:
+            # ===创建实例
+            p = mdb.models[modelname].parts["pullroll_%s" % orientation]
+            ins = a.Instance(name="pullroll_%s-1" % orientation, part=p, dependent=ON)
+            orientation_union += (ins,)
+            # ===平移实例
+            a1 = mdb.models[modelname].rootAssembly
+            startvector = (
+                (
+                    0.0,
+                    jtask.data_pullroll["x_distance"],
+                    jtask.data_pullroll["z_distance"],
+                )
+                if orientation == "x"
+                else (
+                    jtask.data_pullroll["y_distance"],
+                    0.0,
+                    jtask.data_pullroll["z_distance"],
+                )
+            )
+            a1.translate(
+                instanceList=("pullroll_%s-1" % orientation,),
+                vector=startvector,
+            )
+            # ===线性阵列实例(z方向)
+            a1 = mdb.models[modelname].rootAssembly
+            orientation_direction = (
+                (0.0, 1.0, 0.0) if orientation == "x" else (1.0, 0.0, 0.0)
+            )
+            orientation_union += a1.LinearInstancePattern(
+                instanceList=("pullroll_%s-1" % orientation,),
+                direction1=(0.0, 0.0, 1.0),
+                direction2=orientation_direction,
+                number1=jtask.data_pullroll["z_number"],
+                number2=jtask.data_pullroll["%s_number" % orientation],
+                spacing1=jtask.data_pullroll["z_distance"],
+                spacing2=jtask.data_pullroll["%s_distance" % orientation],
+            )
+
+            # ===中心立杆
+            if jtask.data_pullroll["ushape"]:
+                # ===创建实例-中心立杆
+                a1 = mdb.models[modelname].rootAssembly
+                p = mdb.models[modelname].parts["center_roll"]
+                a1.Instance(name="center_roll-%s-1" % orientation, part=p, dependent=ON)
+                # ===旋转实例-中心立杆
+                a1 = mdb.models[modelname].rootAssembly
+                a1.rotate(
+                    instanceList=("center_roll-%s-1" % orientation,),
+                    axisPoint=(0, 0, 0),
+                    axisDirection=(0, 0 + 1, 0),
+                    angle=-90.0,
+                )
+                orientation_union += (a1.instances["center_roll-%s-1" % orientation],)
+                # ===平移实例-中心立杆
+                a1 = mdb.models[modelname].rootAssembly
+                startvector = (
+                    (
+                        jtask.x_len / 2,
+                        jtask.data_pullroll["x_distance"],
+                        0,
+                    )
+                    if orientation == "x"
+                    else (
+                        jtask.data_pullroll["y_distance"],
+                        jtask.y_len / 2,
+                        0,
+                    )
+                )
+                a1.translate(
+                    instanceList=("center_roll-%s-1" % orientation,),
+                    vector=startvector,
+                )
+
+                # ===线性阵列实例
+                orientation_direction = (
+                    (0.0, 1.0, 0.0) if orientation == "x" else (1.0, 0.0, 0.0)
+                )
+                number = jtask.data_pullroll["%s_number" % orientation]
+                spacing = jtask.data_pullroll["%s_distance" % orientation]
+                a1 = mdb.models[modelname].rootAssembly
+                orientation_union += a1.LinearInstancePattern(
+                    instanceList=("center_roll-%s-1" % orientation,),
+                    direction1=orientation_direction,
+                    direction2=(0.0, 0.0, 1.0),
+                    number1=number,
+                    number2=1,
+                    spacing1=spacing,
+                    spacing2=1.0,
+                )
+        steel_union += orientation_union
 
     # ===合并实例-拉杆
-    a1 = mdb.models[modelname].rootAssembly
-    a1.InstanceFromBooleanMerge(
-        name="union",
-        instances=steel_union + (a1.instances["tubelar-1"],),
-        originalInstances=DELETE,
-        mergeNodes=BOUNDARY_ONLY,
-        nodeMergingTolerance=1e-06,
-        domain=BOTH,
-    )
+    if steel_union:
+        a1 = mdb.models[modelname].rootAssembly
+        steel_union += (a1.instances["tubelar-1"],)
+
+        a1.InstanceFromBooleanMerge(
+            name="union",
+            instances=steel_union,
+            originalInstances=DELETE,
+            mergeNodes=BOUNDARY_ONLY,
+            nodeMergingTolerance=1e-06,
+            domain=BOTH,
+        )
 
     # ===创建参考点
     a = mdb.models[modelname].rootAssembly
@@ -572,17 +632,17 @@ def task_execute(jtask):
     f1 = a.instances["concrete-1"].faces
     faces1 = f1.findAt(
         coordinates=tuple(
-            [(jtask.width / 2, jtask.high / 2, 0)],
+            [(jtask.x_len / 2, jtask.y_len / 2, 0)],
         )
     )
     e2 = a.instances["union-1"].edges
     edges2 = e2.findAt(coordinates=jtask.edge_point["bottom_all"])
 
-    if jtask.meta["ushape"]:
+    if jtask.data_pullroll["ushape"]:
         v1 = a.instances["union-1"].vertices
         vert1 = v1.findAt(
             coordinates=tuple(
-                [(jtask.width / 2, jtask.high / 2, 0)],
+                [(jtask.x_len / 2, jtask.y_len / 2, 0)],
             )
         )
         region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
@@ -603,17 +663,17 @@ def task_execute(jtask):
     f1 = a.instances["concrete-1"].faces
     faces1 = f1.findAt(
         coordinates=tuple(
-            [(jtask.width / 2, jtask.high / 2, jtask.length)],
+            [(jtask.x_len / 2, jtask.y_len / 2, jtask.z_len)],
         )
     )
     e2 = a.instances["union-1"].edges
     edges2 = e2.findAt(coordinates=jtask.edge_point["top_all"])
 
-    if jtask.meta["ushape"]:
+    if jtask.data_pullroll["ushape"]:
         v1 = a.instances["union-1"].vertices
         vert1 = v1.findAt(
             coordinates=tuple(
-                [(jtask.width / 2, jtask.high / 2, jtask.length)],
+                [(jtask.x_len / 2, jtask.y_len / 2, jtask.z_len)],
             )
         )
         region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
@@ -729,9 +789,9 @@ def task_execute(jtask):
     a1 = mdb.models[modelname].rootAssembly
     e1 = a1.instances["union-1"].edges
     edges1 = e1.getByBoundingCylinder(
-        center1=(jtask.width / 2, jtask.high / 2, 0),
-        center2=(jtask.width / 2, jtask.high / 2, jtask.length),
-        radius=math.sqrt(jtask.width * jtask.width + jtask.high * jtask.high)
+        center1=(jtask.x_len / 2, jtask.y_len / 2, 0),
+        center2=(jtask.x_len / 2, jtask.y_len / 2, jtask.z_len),
+        radius=math.sqrt(jtask.x_len * jtask.x_len + jtask.y_len * jtask.y_len)
         - jtask.gap,
     )
     region1 = regionToolset.Region(edges=edges1)
@@ -750,9 +810,9 @@ def task_execute(jtask):
     p = mdb.models[modelname].parts["union"]
     e = p.edges
     edges = e.getByBoundingCylinder(
-        center1=(jtask.width / 2, jtask.high / 2, 0),
-        center2=(jtask.width / 2, jtask.high / 2, jtask.length),
-        radius=math.sqrt(jtask.width * jtask.width + jtask.high * jtask.high)
+        center1=(jtask.x_len / 2, jtask.y_len / 2, 0),
+        center2=(jtask.x_len / 2, jtask.y_len / 2, jtask.z_len),
+        radius=math.sqrt(jtask.x_len * jtask.x_len + jtask.y_len * jtask.y_len)
         - jtask.gap,
     )
     pickedRegions = (edges,)
@@ -841,8 +901,8 @@ def task_execute(jtask):
         scratch="",
         resultsFormat=ODB,
         multiprocessingMode=DEFAULT,
-        numCpus=7,
-        numDomains=7,
+        numCpus=6,
+        numDomains=6,
         numGPUs=1,
     )
     # ===保存
@@ -868,22 +928,26 @@ def task_execute(jtask):
             job_running = True
             stafile = "D:/Environment/Appdata/AbaqusData/Temp/%s.sta" % jobname
             # ===输出status
-            while not os.path.isfile(stafile):
+            status_output = 30
+            while not os.path.isfile(stafile) and status_output:
                 time.sleep(10)
-            with io.open(stafile, "rt", encoding="gbk") as f:
-                while job_running:
-                    f.seek(0, 0)
-                    status = f.read().splitlines()
-                    for i in range(line, len(status)):
-                        line_content = status[i]
-                        if "COMPLETED" in line_content:
-                            job_running = False
-                            break
-                        if time.time() - st_time > jtask.meta["time_limit"]:
-                            raise Exception("job time out")
-                        print(line_content)
-                        line += 1
-                    time.sleep(10)
+                status_output -= 1
+            if status_output:
+                with io.open(stafile, "rt", encoding="gbk") as f:
+                    while job_running:
+                        f.seek(0, 0)
+                        status = f.read().splitlines()
+                        for i in range(line, len(status)):
+                            line_content = status[i]
+                            if "COMPLETED" in line_content:
+                                job_running = False
+                                break
+                            if time.time() - st_time > jtask.meta["time_limit"]:
+                                raise Exception("job time out")
+                            print(line_content)
+                            print("time used: ", time.time() - st_time)
+                            line += 1
+                        time.sleep(20)
 
             mdb.jobs[jobname].waitForCompletion()
             job_time = time.time() - st_time
@@ -919,7 +983,7 @@ def task_execute(jtask):
             top_point_data = {
                 "sigma": [-i[1] for i in xy0],
                 "sigma(kN)": [-i[1] / 1000 for i in xy0],
-                "epsilon": [-i[1] / jtask.length for i in xy1],
+                "epsilon": [-i[1] / jtask.z_len for i in xy1],
                 "time": [i[0] for i in xy0],
             }
 
@@ -969,5 +1033,12 @@ def task_execute(jtask):
             traceback.print_exc()
 
 
-json_task = JsonTask("C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\abatmp.json")
-task_execute(json_task)
+i = 0
+while 1:
+    json_path = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks\\%d.json" % i
+    if not os.path.isfile(json_path):
+        break
+    print("task:", json_path)
+    json_task = JsonTask(json_path)
+    task_execute(json_task)
+    i += 1
