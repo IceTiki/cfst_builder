@@ -942,7 +942,10 @@ def task_execute(jtask):
                             if "COMPLETED" in line_content:
                                 job_running = False
                                 break
-                            if time.time() - st_time > jtask.meta["time_limit"]:
+                            if (
+                                not jtask.meta["time_limit"]
+                                or time.time() - st_time > jtask.meta["time_limit"]
+                            ):
                                 raise Exception("job time out")
                             print(line_content)
                             print("time used: ", time.time() - st_time)

@@ -123,23 +123,34 @@ class TaskMeta:
         job名
     caename : str
         cae名称
-    caepath : str
-        cae路径
+    taskfolder : str
+        任务数据保存路径
     modelname : str
         model名
+
     submit : bool
         是否提交作业
     time_limit : float
-        作业最高运行时间
+        作业最高运行时间(秒)
     """
 
     jobname: str
     caename: str
-    caepath: str
+    taskfolder: str
     modelname: str
 
     submit: bool = False
-    time_limit: float = 3600
+    time_limit: float = None
+
+    @classmethod
+    def from2(cla, name: str, path: str):
+        """快速构造类"""
+        return cla("job_" + name, "cae_" + name, path, "model_" + name)
+
+    @property
+    def caepath(self):
+        taskfolder = Path(self.taskfolder)
+        return str(taskfolder / self.caename)
 
 
 @dataclass
@@ -324,13 +335,11 @@ class AbaqusData:
 
     @property
     def json_meta(self):
-        taskfolder = Path(self.meta.caepath)
-        caepath = str(taskfolder / self.meta.caename)
         return {
-            "jobname": self.meta.jobname,
-            "caepath": caepath,
-            "taskfolder": str(taskfolder),
-            "modelname": self.meta.modelname,
+            "jobname": str(self.meta.jobname),
+            "caepath": str(self.meta.caepath),
+            "taskfolder": str(self.meta.taskfolder),
+            "modelname": str(self.meta.modelname),
             "submit": self.meta.submit,
             "time_limit": self.meta.time_limit,
         }
