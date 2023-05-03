@@ -640,10 +640,13 @@ def task_execute(jtask):
 
     if jtask.data_pullroll["ushape"]:
         v1 = a.instances["union-1"].vertices
-        vert1 = v1.findAt(
-            coordinates=tuple(
-                [(jtask.x_len / 2, jtask.y_len / 2, 0)],
-            )
+        vert1 = v1.getByBoundingBox(
+            0 + jtask.gap,
+            0 + jtask.gap,
+            0 - jtask.gap,
+            jtask.x_len - jtask.gap,
+            jtask.y_len - jtask.gap,
+            0 + jtask.gap,
         )
         region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
     else:
@@ -671,10 +674,13 @@ def task_execute(jtask):
 
     if jtask.data_pullroll["ushape"]:
         v1 = a.instances["union-1"].vertices
-        vert1 = v1.findAt(
-            coordinates=tuple(
-                [(jtask.x_len / 2, jtask.y_len / 2, jtask.z_len)],
-            )
+        vert1 = v1.getByBoundingBox(
+            0 + jtask.gap,
+            0 + jtask.gap,
+            jtask.z_len - jtask.gap,
+            jtask.x_len - jtask.gap,
+            jtask.y_len - jtask.gap,
+            jtask.z_len + jtask.gap,
         )
         region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
     else:
