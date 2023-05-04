@@ -102,8 +102,8 @@ class Pullroll:
 
     @property
     def calculation_area(self) -> float:
-        """计算截面积, 考虑U型连接件会使其面积翻倍"""
-        return self.area * (2 if self.ushape else 1)
+        r"""计算截面积, U型连接件的计算截面面积为\sqrt{2}倍"""
+        return self.area * (math.sqrt(2) if self.ushape else 1)
 
     def __test__(self):
         # z_number = math.ceil(
