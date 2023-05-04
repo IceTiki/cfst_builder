@@ -308,9 +308,9 @@ def task_execute(jtask):
     mdb.models[modelname].StaticStep(
         name="Step-1",
         previous="Initial",
-        maxNumInc=1000,
+        maxNumInc=10000,
         initialInc=0.01,
-        minInc=1e-07,
+        minInc=1e-06,
         nlgeom=ON,
     )
     mdb.models[modelname].steps["Step-1"].setValues(
@@ -638,7 +638,9 @@ def task_execute(jtask):
     e2 = a.instances["union-1"].edges
     edges2 = e2.findAt(coordinates=jtask.edge_point["bottom_all"])
 
-    if jtask.data_pullroll["ushape"]:
+    if jtask.data_pullroll["ushape"] and (
+        jtask.data_pullroll["x_exist"] or jtask.data_pullroll["y_exist"]
+    ):
         v1 = a.instances["union-1"].vertices
         vert1 = v1.getByBoundingBox(
             0 + jtask.gap,
@@ -672,7 +674,9 @@ def task_execute(jtask):
     e2 = a.instances["union-1"].edges
     edges2 = e2.findAt(coordinates=jtask.edge_point["top_all"])
 
-    if jtask.data_pullroll["ushape"]:
+    if jtask.data_pullroll["ushape"] and (
+        jtask.data_pullroll["x_exist"] or jtask.data_pullroll["y_exist"]
+    ):
         v1 = a.instances["union-1"].vertices
         vert1 = v1.getByBoundingBox(
             0 + jtask.gap,
@@ -949,8 +953,8 @@ def task_execute(jtask):
                                 job_running = False
                                 break
                             if (
-                                not jtask.meta["time_limit"]
-                                or time.time() - st_time > jtask.meta["time_limit"]
+                                jtask.meta["time_limit"]
+                                and time.time() - st_time > jtask.meta["time_limit"]
                             ):
                                 raise Exception("job time out")
                             print(line_content)
