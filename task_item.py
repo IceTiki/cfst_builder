@@ -102,8 +102,8 @@ class Pullroll:
 
     @property
     def calculation_area(self) -> float:
-        r"""计算截面积, U型连接件的计算截面面积为\sqrt{2}倍"""
-        return self.area * (math.sqrt(2) if self.ushape else 1)
+        r"""混凝土本构的计算截面积, U型连接件的计算截面面积为2倍"""
+        return self.area * (2 if self.ushape else 1)
 
     def __test__(self):
         # z_number = math.ceil(
@@ -246,7 +246,7 @@ class AbaqusData:
         """核心混凝土"""
         concrete_core_strength = (
             self.concrete.strength_pressure * 1.25
-        )  # !圆柱体抗压强度暂取f_ck的1.25倍
+        )  # !圆柱体抗压强度约为f_ck的1.25倍
         concrete_model = constitutive_models.ConcreteConstitutiveModels(
             self.geometry.len_x,
             self.geometry.len_y,
