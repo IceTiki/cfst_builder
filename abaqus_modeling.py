@@ -462,7 +462,7 @@ def task_execute(jtask):
     mdb.models[modelname].TrussSection(
         name="center_roll",
         material="steel_pullroll",
-        area=jtask.data_pullroll["area"],
+        area=jtask.data_pullroll["area_center"],
     )
 
     # ===指派截面-拉杆X
