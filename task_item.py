@@ -61,6 +61,8 @@ class Pullroll:
         构件几何信息
     area : float
         A_b, 单根约束拉杆的面积(mm^2), (U型连接件的截面积不需要乘2, 仅算弯折前的截面面积)
+    area_center : float
+        约束立杆截面面积
     x_number, y_number, z_number: int
         x/y/z方向拉杆个数
     ushape : bool
@@ -71,6 +73,7 @@ class Pullroll:
 
     geo: Geometry
     area: float
+    area_center: float
     x_number: int = 1
     y_number: int = 1
     z_number: int = 10
@@ -320,6 +323,7 @@ class AbaqusData:
         return {
             "area": self.pullroll.area,
             "ushape": self.pullroll.ushape,
+            "area_center": self.pullroll.area_center,
             # ===z
             "z_number": self.pullroll.z_number,
             "z_distance": self.pullroll.z_distance,

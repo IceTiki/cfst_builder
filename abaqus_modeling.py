@@ -32,7 +32,7 @@ class Utils:
 class TaskHandler:
     def __init__(self, taskparams):
         self.taskparams = taskparams
-        self.gap = 1
+        self.gap = 3
         self.load_params()
         self.load_material()
         self.load_geometry()
@@ -1060,9 +1060,14 @@ class TaskHandler:
                 traceback.print_exc()
 
 
-idxnum = 0
-tasks = Utils.load_json(task_path)
-for task in tasks:
-    TaskHandler(task).run()
-    idxnum += 1
-    print("task:%d/%d" % (idxnum, len(tasks)))
+i = 0
+while 1:
+    json_path = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks\\%d.json" % i
+    if not os.path.isfile(json_path):
+        break
+    print("task:", json_path)
+
+    taskparams = Utils.load_json(json_path)
+    TaskHandler(taskparams).run()
+
+    i += 1

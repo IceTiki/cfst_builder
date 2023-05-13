@@ -1,6 +1,7 @@
 import math
 import time
 from pathlib import Path
+import os
 import shutil
 from itertools import product
 
@@ -44,6 +45,7 @@ def gene(id: int, name: str, comment_data: dict = {}, *args, **kwargs):
     roll = Pullroll(
         geo,
         math.pi * (kwargs["dia"] / 2) ** 2,
+        math.pi * (24 / 2) ** 2,
         1,
         1,
         8,
@@ -56,7 +58,7 @@ def gene(id: int, name: str, comment_data: dict = {}, *args, **kwargs):
     taskname = f"{fm_time}_" + name + f"_{id}"
     taskpath = Path(r"D:\Casual\T_abaqus") / taskname
     meta = TaskMeta.from2(taskname, taskpath)
-    meta.submit = True
+    meta.submit = False
     meta.time_limit = 2000
 
     # ===生成json
@@ -71,7 +73,7 @@ def gene(id: int, name: str, comment_data: dict = {}, *args, **kwargs):
     taskfolder.mkdir(exist_ok=True, parents=True)
     (taskfolder / "script").mkdir(exist_ok=True, parents=True)
     for i in (
-        "abaqus_executable.py",
+        "abaqus_modeling.py",
         "task_generator.py",
         "task_item.py",
         taskjson_name,
@@ -82,15 +84,18 @@ def gene(id: int, name: str, comment_data: dict = {}, *args, **kwargs):
     tt.JsonFile.write(comment_data, taskfolder / "script" / "comment_data.json")
 
     # ===输出信息
-    markdown_table = f"""| 试件编号 | $D\\times B \\times L\\times t $        | $b_s \\times n_s \\times d_s$ | $\\bar e_0$ | 钢管钢材 | 拉杆钢筋 | 混凝土标号 |
-| -------- | ------------------------------------ | --------------------------- | ---------- | -------- | -------- | ---------- |
-|          | $ {geo.len_y} \\times {geo.len_x} \\times {geo.len_z} \\times {geo.tubelar_thickness}$ | ${roll.z_distance} \\times {roll.xy_number} \\times {round(2*math.sqrt(roll.area/math.pi))}$   | ${bar_e_0}$    | ${steel.grade}$ | ${steelbar.grade}$ | ${concrete.grade}$    |"""
-    print(markdown_table)
+#     markdown_table = f"""| 试件编号 | $D\\times B \\times L\\times t $        | $b_s \\times n_s \\times d_s$ | $\\bar e_0$ | 钢管钢材 | 拉杆钢筋 | 混凝土标号 |
+# | -------- | ------------------------------------ | --------------------------- | ---------- | -------- | -------- | ---------- |
+# |          | $ {geo.len_y} \\times {geo.len_x} \\times {geo.len_z} \\times {geo.tubelar_thickness}$ | ${roll.z_distance} \\times {roll.xy_number} \\times {round(2*math.sqrt(roll.area/math.pi))}$   | ${bar_e_0}$    | ${steel.grade}$ | ${steelbar.grade}$ | ${concrete.grade}$    |"""
+#     print(markdown_table)
 
 
 @logger.catch
 def main():
-    iter_wid = [150, 300]
+    for i in Path("tasks").glob("*.json"):
+        os.remove(i)
+
+    iter_wid = [300, 300]
     iter_dia = range(1, 20)
 
     i = 0
@@ -102,6 +107,7 @@ def main():
             comment_data=kwargs,
             **kwargs,
         )
+        break
         i += 1
 
 
