@@ -1,2 +1,9 @@
 *.json
 copy/
+task/
+tasks/
+_test.py
+*.yml
+*.pyc
+test.py
+test.py
