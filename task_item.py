@@ -1,10 +1,43 @@
 from dataclasses import dataclass
+import itertools
 from pathlib import Path
-from typing import Union
+from typing import Union, Literal
 import math
 import numpy as np
+import json
 
 from materlib import materials, constitutive_models
+from tikilib import crypto as tc
+from tikilib import text as tt
+
+Point2d = tuple[float, float]
+Line2d = tuple[Point2d, Point2d]
+
+
+class Utils:
+    def __encrypt(content: str):
+        return tc.SimpleAES_StringCrypto("2023_graduation_project").encrypt(content)
+
+    def __decrypt(content: str):
+        return tc.SimpleAES_StringCrypto("2023_graduation_project").decrypt(content)
+
+    @classmethod
+    def get_encrypt_code(cla):
+        # TODO
+        repository = Path(__file__).parent
+        data = {}
+        for i in repository.glob("*.py"):
+            k = str(i.name)
+            v = i.read_text(encoding="utf-8")
+            k, v = map(cla.__encrypt, (k, v))
+            data[k] = v
+
+        data = json.dumps(data, ensure_ascii=False)
+        return data
+        out = Path("tmp.json")
+        out.write_text(data)
+
+    # get_encrypt_code()
 
 
 @dataclass
@@ -12,11 +45,11 @@ class Geometry:
     """
     Parameters
     ---
-    len_x : float
+    x_len : float
         B, 截面短边边长(mm)
-    len_y : float
+    y_len : float
         D, 截面长边边长(mm)
-    len_z : float
+    z_len : float
         H, 柱高度(mm)
     tubelar_thickness : float
         t, 钢管厚度(mm)
@@ -26,12 +59,60 @@ class Geometry:
         钢材布种数量(x,y,z)方向
     """
 
-    len_x: float
-    len_y: float
-    len_z: float
+    x_len: float
+    y_len: float
+    z_len: float
     tubelar_thickness: float
     concrete_mesh: tuple[int, ...] = (6, 6, 10)
     steel_mesh: tuple[int, ...] = (5, 5, 8)
+
+    @property
+    def tube_section_area(self):
+        """A_s, 带约束拉杆的方形、矩形钢管混凝土柱截面钢管面积(mm^2)"""
+        return 2 * (self.y_len + self.x_len) * self.tubelar_thickness
+
+    @property
+    def concrete_grid_size(self):
+        return tuple(
+            j / i
+            for i, j in zip(
+                self.concrete_mesh,
+                (self.x_len, self.y_len, self.z_len),
+            )
+        )
+
+    @property
+    def steel_grid_size(self):
+        return tuple(
+            j / i
+            for i, j in zip(
+                self.steel_mesh,
+                (self.x_len, self.y_len, self.z_len),
+            )
+        )
+
+    @property
+    def common_parameters(self):
+        datas = {}
+        for point in itertools.product(range(3), range(3), range(3)):
+            point = tuple(point)
+            point_position = tuple(
+                i * j / 2 for i, j in zip(point, (self.x_len, self.y_len, self.z_len))
+            )
+            datas[f"p{''.join(map(str, point))}"] = point_position
+
+        return datas
+
+    def __dict__(self):
+        return {
+            "x_len": self.x_len,
+            "y_len": self.y_len,
+            "z_len": self.z_len,
+            "tube_thickness": self.tubelar_thickness,
+            "concrete_grid_size": self.concrete_grid_size,
+            "steel_grid_size": self.steel_grid_size,
+            "common_parameters": self.common_parameters,
+        }
 
 
 @dataclass
@@ -39,81 +120,170 @@ class ReferencePoint:
     """
     Parameters
     ---
-    shift : list[float]
-        偏移坐标(x,y,z)
-    displacement : list[float | None]
-        位移(U1, U2, U3, RU1, RU2, RU3), 如果为None会转变为abaqus的UNSET
+    position : tuple[float], default=(0,0,0)
+        坐标(x,y,z)
+    displacement : tuple[float | None], default=(None, )*6
+        施加约束(U1, U2, U3, RU1, RU2, RU3), 如果为None会在建模脚本中被转化为abaqus的UNSET
     """
 
-    shift: list[float]
-    displacement: list[Union[float, None]]
+    position: tuple[float] = (0, 0, 0)
+    displacement: tuple[Union[float, None]] = (None,) * 6
+
+    @classmethod
+    def init_from_datum(
+        cla,
+        geo: Geometry,
+        shift: list[float],
+        displacement: list[Union[float, None]],
+        face: Literal["top", "bottom"],
+    ):
+        """
+        以构件一个面的中心为基准, 得到偏移后的坐标点。
+
+        Parameters
+        ---
+        geo : Geometry
+            构件几何参数
+        shift : list[float]
+            偏移量(x,y,z)
+        displacement : list[float | None]
+            固定位移(U1, U2, U3, RU1, RU2, RU3), 如果为None会转变为abaqus的UNSET(无约束)
+        face : {'top', 'bottom'}
+            面(顶面/底面)
+        """
+        if face == "top":
+            datum = (geo.x_len / 2, geo.y_len / 2, geo.z_len)
+        elif face == "bottom":
+            datum = (geo.x_len / 2, geo.y_len / 2, 0)
+        else:
+            raise ValueError(f"{face} not a supported face")
+
+        position = tuple(i + j for i, j in zip(shift, datum))
+        return cla(position, displacement)
+
+    def __dict__(self):
+        return {"position": self.position, "displacement": self.displacement}
 
 
 @dataclass
-class Pullroll:
+class RodPattern:
     """
-    Notice
-    ---
-
     Parameters
     ---
-    geo : Geometry
-        构件几何信息
-    area : float
-        A_b, 单根约束拉杆的面积(mm^2), (U型连接件的截面积不需要乘2, 仅算弯折前的截面面积)
-    area_center : float
+    area_rod : float
+        A_b, 单根约束拉杆的面积(mm^2)
+    area_pole : float
         约束立杆截面面积
-    x_number, y_number, z_number: int
-        x/y/z方向拉杆个数
-    ushape : bool
-        是否为U型连接件
-    x_exist, y_exist : bool
-        是否有x/y方向拉杆
+    pattern_rod : tuple[Line2d]
+        拉杆平面布置
+    pattern_pole : tuple[Point2d]
+        立杆平面布置
+    number_layer_rods : float
+        n_b, 柱在b_s范围内约束拉杆的根数
+    number_layers : int
+        拉杆布置层数
+    layer_spacing : float
+        b_s, 柱纵向约束拉杆的间距(mm)
     """
 
-    geo: Geometry
-    area: float
-    area_center: float
-    x_number: int = 1
-    y_number: int = 1
-    z_number: int = 10
-    ushape: bool = False
-    x_exist: bool = True
-    y_exist: bool = True
+    area_rod: float
+    area_pole: float
+    pattern_rod: tuple[Line2d]
+    pattern_pole: tuple[Point2d]
+    number_layer_rods: float
+    number_layers: int
+    layer_spacing: float
 
-    @property
-    def xy_number(self) -> float:
-        """n_s, 柱在b_s范围内约束拉杆的根数"""
-        return (self.x_number if self.x_exist else 0) + (
-            self.y_number if self.y_exist else 0
+    @staticmethod
+    def get_orthogonal_pattern(x_number=1, y_number=1):
+        rod_patten = tuple()
+
+        y_distance = 1 / (x_number + 1)
+        for i in range(x_number):
+            y_position = (i + 1) * y_distance
+            p1 = (0, y_position)
+            p2 = (1, y_position)
+            line = (p1, p2)
+            rod_patten += (line,)
+
+        x_distance = 1 / (y_number + 1)
+        for i in range(y_number):
+            x_position = (i + 1) * x_distance
+            p1 = (x_position, 0)
+            p2 = (x_position, 1)
+            line = (p1, p2)
+            rod_patten += (line,)
+        return rod_patten
+
+    @classmethod
+    def init_from_pattern(
+        cla,
+        geo: Geometry,
+        dia_rod: float,
+        dia_pole: float,
+        pattern_rod_normal: tuple[Line2d],
+        pattern_pole_normal: tuple[Point2d],
+        number_layers: int,
+    ):
+        """
+        Parameters
+        ---
+        geo : Geometry
+            构件几何参数
+        dia_rod : float
+            d_s, 单根约束拉杆的直径(mm)
+        dia_pole : float
+            约束立杆的直径(mm)
+        pattern_rod_normal : tuple[Line2d]
+            拉杆平面布置(构件截面坐标系, 构件副对角线坐标分别为(0,0)和(1,1))
+        pattern_pole_normal : tuple[Point2d]
+            立杆平面布置(构件截面坐标系, 构件副对角线坐标分别为(0,0)和(1,1))
+        number_layers : int
+            拉杆布置层数
+        """
+        contact_number = 0
+        for line in pattern_rod_normal:
+            for point in line:
+                if point[0] == 0 or point[0] == 1:
+                    contact_number += 1
+                elif point[1] == 0 or point[1] == 1:
+                    contact_number += 1
+        number_rod = contact_number / 2
+
+        converpoint = lambda point: tuple(
+            i * j for i, j in zip(point, (geo.x_len, geo.y_len))
         )
 
-    @property
-    def x_distance(self) -> float:
-        """x方向拉杆的间隔"""
-        return self.geo.len_y / (self.x_number + 1 if self.x_exist else 2)
+        # ===坐标转换
+        pattern_rod = tuple(
+            tuple(converpoint(point) for point in line) for line in pattern_rod_normal
+        )
+        pattern_pole = tuple(map(converpoint, pattern_pole_normal))
 
-    @property
-    def y_distance(self) -> float:
-        """y方向拉杆的间隔"""
-        return self.geo.len_x / (self.y_number + 1 if self.y_exist else 2)
+        layer_spacing = geo.z_len / (number_layers + 1)
 
-    @property
-    def z_distance(self) -> float:
-        """b_s, 柱纵向约束拉杆的间距(mm)"""
-        return self.geo.len_z / (self.z_number + 1)
+        area_rod, area_pole = map(lambda x: math.pi * (x * x) / 4, (dia_rod, dia_pole))
 
-    @property
-    def calculation_area(self) -> float:
-        r"""混凝土本构的计算截面积, U型连接件的计算截面面积为2倍"""
-        return self.area * (2 if self.ushape else 1)
+        return cla(
+            area_rod,
+            area_pole,
+            pattern_rod,
+            pattern_pole,
+            number_rod,
+            number_layers,
+            layer_spacing,
+        )
 
-    def __test__(self):
-        # z_number = math.ceil(
-        #     (self.geometry.length - self.pullroll.z_distance) / self.pullroll.z_distance
-        # )
-        # z_start = (self.geometry.length - self.pullroll.z_distance * z_number) / 2
-        return None
+    def __dict__(self):
+        return {
+            "area_rod": self.area_rod,
+            "area_pole": self.area_pole,
+            "pattern_rod": self.pattern_rod,
+            "pattern_pole": self.pattern_pole,
+            "number_layer_rods": self.number_layer_rods,
+            "number_layers": self.number_layers,
+            "layer_spacing": self.layer_spacing,
+        }
 
 
 @dataclass
@@ -142,18 +312,33 @@ class TaskMeta:
     taskfolder: str
     modelname: str
 
-    submit: bool = False
+    submit: bool = True
     time_limit: float = None
-
-    @classmethod
-    def from2(cla, name: str, path: str):
-        """快速构造类"""
-        return cla("job_" + name, "cae_" + name, path, "model_" + name)
 
     @property
     def caepath(self):
         taskfolder = Path(self.taskfolder)
         return str(taskfolder / self.caename)
+
+    @classmethod
+    def inti_2(cla, name: str, path: str):
+        """快速构造类"""
+        return cla(
+            "job_" + name,
+            "cae_" + name,
+            path,
+            "model_" + name,
+        )
+
+    def __dict__(self):
+        return {
+            "jobname": str(self.jobname),
+            "caepath": str(self.caepath),
+            "taskfolder": str(self.taskfolder),
+            "modelname": str(self.modelname),
+            "submit": self.submit,
+            "time_limit": self.time_limit,
+        }
 
 
 @dataclass
@@ -186,93 +371,76 @@ class AbaqusData:
     steel: materials.Steel
     steelbar: materials.SteelBar
     geometry: Geometry
-    pullroll: Pullroll
-    reterpoint_top: ReferencePoint
+    pullroll: RodPattern
+    referpoint_top: ReferencePoint
     referpoint_bottom: ReferencePoint
 
     @property
-    def tube_area(self):
-        """A_s, 带约束拉杆的方形、矩形钢管混凝土柱截面钢管面积(mm^2)"""
-        return (
-            2
-            * (self.geometry.len_y + self.geometry.len_x)
-            * self.geometry.tubelar_thickness
-        )
-
-    @property
-    def json_tube(self, table_len: int = 10000):
+    def material_tube(self, table_len: int = 10000):
         """钢管"""
         steel_model = constitutive_models.SteelTubelarConstitutiveModels(
             self.steel.strength_yield,
             self.steel.strength_tensile,
             self.steel.elastic_modulus,
         )
+        sigma_yield = self.steel.strength_yield / self.steel.elastic_modulus
 
-        x = np.linspace(
-            self.steel.strength_yield / self.steel.elastic_modulus, 0.2, table_len
-        )
+        x = np.linspace(sigma_yield, 0.2, table_len)
         y = steel_model.model(x)
-        # plt.scatter(x, y, s=1)
         return {
             "sigma": y.tolist(),
-            "epsilon": (
-                x - self.steel.strength_yield / self.steel.elastic_modulus
-            ).tolist(),
+            "epsilon": (x - sigma_yield).tolist(),
             "elastic_modulus": self.steel.elastic_modulus,
         }
 
     @property
-    def json_steelbar(self, table_len: int = 10000):
+    def material_rod(self, table_len: int = 10000):
         """约束拉杆"""
         steelbar_model = constitutive_models.PullrollConstitutiveModels(
             self.steelbar.strength_criterion_yield,
             self.steelbar.elastic_modulus,
         )
+        sigma_yield = (
+            self.steelbar.strength_criterion_yield / self.steelbar.elastic_modulus
+        )
+
         x = np.linspace(
-            self.steelbar.strength_criterion_yield / self.steelbar.elastic_modulus,
+            sigma_yield,
             0.2,
             table_len,
         )
         y = steelbar_model.model(x)
-        # plt.scatter(x, y, s=1)
         return {
             "sigma": y.tolist(),
-            "epsilon": (
-                x
-                - self.steelbar.strength_criterion_yield / self.steelbar.elastic_modulus
-            ).tolist(),
+            "epsilon": (x - sigma_yield).tolist(),
             "elastic_modulus": self.steelbar.elastic_modulus,
         }
 
     @property
-    def json_core_concrete(self, table_len: int = 10000):
+    def material_concrte(self, table_len: int = 10000):
         """核心混凝土"""
         concrete_core_strength = (
             self.concrete.strength_pressure * 1.25
-        )  # !圆柱体抗压强度约为f_ck的1.25倍
+        )  # !圆柱体抗压强度约为f_ck的1.25倍(来源未知)
         concrete_model = constitutive_models.ConcreteConstitutiveModels(
-            self.geometry.len_x,
-            self.geometry.len_y,
+            self.geometry.x_len,
+            self.geometry.y_len,
             concrete_core_strength,
             self.concrete.strength_pressure,
-            self.tube_area,
+            self.geometry.tube_section_area,
             self.steel.strength_yield,
-            self.pullroll.calculation_area,
+            self.pullroll.area_rod,
             self.steelbar.strength_criterion_yield,
-            self.pullroll.z_distance,
-            self.pullroll.xy_number,
+            self.pullroll.layer_spacing,
+            self.pullroll.number_layer_rods,
         )
 
-        concrete_cut = 0.00001
-
-        x = np.linspace(concrete_cut, 0.3, table_len)
+        x = np.linspace(10e-5, 0.3, table_len)
         y = concrete_model.model(x)
         x[0] = 0
 
         # ===混凝土塑性损伤的断裂能
-
         concrete_gfi = np.interp(concrete_core_strength, [20, 40], [40, 120])
-        # print(f"{self.concrete.strength_tensile}MPa <-> {concrete_gfi}N/m")
 
         return {
             "sigma": y.tolist(),
@@ -283,81 +451,18 @@ class AbaqusData:
         }
 
     @property
-    def json_geometry(self):
-        return {
-            "x_len": self.geometry.len_x,
-            "y_len": self.geometry.len_y,
-            "z_len": self.geometry.len_z,
-            "tube_thickness": self.geometry.tubelar_thickness,
-            "concrete_seed": tuple(
-                j / i
-                for i, j in zip(
-                    self.geometry.concrete_mesh,
-                    (self.geometry.len_x, self.geometry.len_y, self.geometry.len_z),
-                )
-            ),
-            "steel_seed": tuple(
-                j / i
-                for i, j in zip(
-                    self.geometry.steel_mesh,
-                    (self.geometry.len_x, self.geometry.len_y, self.geometry.len_z),
-                )
-            ),
-        }
-
-    @property
-    def json_referpoint(self):
-        return {
-            "top": {
-                "shift": self.reterpoint_top.shift,
-                "displacement": self.reterpoint_top.displacement,
-            },
-            "bottom": {
-                "shift": self.referpoint_bottom.shift,
-                "displacement": self.referpoint_bottom.displacement,
-            },
-        }
-
-    @property
-    def json_pullroll(self):
-        return {
-            "area": self.pullroll.area,
-            "ushape": self.pullroll.ushape,
-            "area_center": self.pullroll.area_center,
-            # ===z
-            "z_number": self.pullroll.z_number,
-            "z_distance": self.pullroll.z_distance,
-            # ===x
-            "x_number": self.pullroll.x_number,
-            "x_distance": self.pullroll.x_distance,
-            "x_exist": self.pullroll.x_exist,
-            # ===y
-            "y_number": self.pullroll.y_number,
-            "y_distance": self.pullroll.y_distance,
-            "y_exist": self.pullroll.y_exist,
-        }
-
-    @property
-    def json_meta(self):
-        return {
-            "jobname": str(self.meta.jobname),
-            "caepath": str(self.meta.caepath),
-            "taskfolder": str(self.meta.taskfolder),
-            "modelname": str(self.meta.modelname),
-            "submit": self.meta.submit,
-            "time_limit": self.meta.time_limit,
-        }
-
-    @property
     def json_task(self):
         return {
             "materials": {
-                "concrete": self.json_core_concrete,
-                "steel": self.json_tube,
-                "steelbar": self.json_steelbar,
+                "concrete": self.material_concrte,
+                "steel": self.material_tube,
+                "steelbar": self.material_rod,
             },
-            "geometry": self.json_geometry,
-            "referpoint": self.json_referpoint,
-            "pullroll": self.json_pullroll,
-            "meta": self.json_meta,
+            "geometry": self.geometry.__dict__(),
+            "referpoint": {
+                "top": self.referpoint_top.__dict__(),
+                "bottom": self.referpoint_bottom.__dict__(),
+            },
+            "pullroll": self.pullroll.__dict__(),
+            "meta": self.meta.__dict__(),
         }

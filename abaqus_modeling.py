@@ -11,8 +11,12 @@ import time
 import os
 import traceback
 import shutil
+import urllib2
 
-task_path = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks.json"
+
+TASK_FOLDER = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks"
+GAP = 1  #  取一个小值, 用于几何选取函数等, 用于将选框向内缩一点
+UGAP = 10  #  U型连接件的建模偏移(建模时用V字形拉杆模拟U形拉杆, 偏移量就是V在顶端的岔开距离的一半)
 
 
 class Utils:
@@ -28,15 +32,34 @@ class Utils:
         with io.open(jsonFile, "w", encoding=encoding) as f:
             f.write(json.dumps(item, ensure_ascii=ensure_ascii).decode("utf-8"))
 
+    @staticmethod
+    def http_get(url):
+        response = urllib2.urlopen(url)
+        content = response.read()
+        return content
+
+    @staticmethod
+    def mkdirs(path):
+        if os.path.isdir(path):
+            return True
+        elif os.path.isfile(path):
+            raise ValueError("%s is a file" % path)
+        else:
+            os.makedirs(name=path)
+            return True
+
 
 class TaskHandler:
+    gap = GAP
+    ugap = UGAP
+
     def __init__(self, taskparams):
         self.taskparams = taskparams
-        self.gap = 3
         self.load_params()
         self.load_material()
         self.load_geometry()
         self.load_referpoint()
+        self.load_pullroll()
         self.load_meta()
 
     def load_params(self):
@@ -79,33 +102,32 @@ class TaskHandler:
             self.tube_thickness,
             self.concrete_seed,
             self.steel_seed,
+            self.common_point,
         ) = (
             self.geometry["x_len"],
             self.geometry["y_len"],
             self.geometry["z_len"],
             self.geometry["tube_thickness"],
-            self.geometry["concrete_seed"],
-            self.geometry["steel_seed"],
+            self.geometry["concrete_grid_size"],
+            self.geometry["steel_grid_size"],
+            self.geometry["common_parameters"],
         )
 
     def load_referpoint(self):
         # ===顶部
-        rp = self.taskparams["referpoint"]["top"]["shift"]
-        self.referpoint_top = (
-            self.x_len / 2 + rp[0],
-            self.y_len / 2 + rp[1],
-            self.z_len + rp[2],
-        )
-
+        self.referpoint_top = self.taskparams["referpoint"]["top"]["position"]
         value = self.taskparams["referpoint"]["top"]["displacement"]
         self.displacement_top = tuple((UNSET if i is None else i) for i in value)
 
         # ===底部
-        rp = self.taskparams["referpoint"]["bottom"]["shift"]
-        self.referpoint_bottom = (self.x_len / 2 + rp[0], self.y_len / 2 + rp[1], rp[2])
-
+        self.referpoint_bottom = self.taskparams["referpoint"]["bottom"]["position"]
         value = self.taskparams["referpoint"]["bottom"]["displacement"]
         self.displacement_bottom = tuple((UNSET if i is None else i) for i in value)
+
+    def load_pullroll(self):
+        self.rod_exist = bool(self.pullroll["pattern_rod"])
+        self.pole_exist = bool(self.pullroll["pattern_pole"])
+        self.flag_union = self.rod_exist or self.pole_exist
 
     def load_meta(self):
         self.caepath, self.jobname, self.modelname = (
@@ -114,13 +136,9 @@ class TaskHandler:
             self.meta["modelname"].encode("ascii"),
         )
 
-        self.work_stafile = (
-            "D:/Environment/Appdata/AbaqusData/Temp/%s.sta" % self.jobname
-        )
+        self.work_stafile = os.getcwd() + "\\%s.sta" % self.jobname
         self.work_odbpath = (
-            ("D:/Environment/Appdata/AbaqusData/Temp/%s.odb" % self.jobname)
-            .decode("utf-8")
-            .encode("ascii")
+            (os.getcwd() + "\\%s.odb" % self.jobname).decode("utf-8").encode("ascii")
         )
 
     @property
@@ -152,8 +170,8 @@ class TaskHandler:
             ),
             "z_all": (
                 (self.x_len, 0, self.z_len / 2),
-                (self.x_len, self.y_len, self.z_len / 2),
                 (0, self.y_len, self.z_len / 2),
+                (0, 0, self.z_len / 2),
                 (self.x_len, self.y_len, self.z_len / 2),
             ),
         }
@@ -198,11 +216,6 @@ class TaskHandler:
         del mdb.models[self.modelname].sketches["__profile__"]
 
         # ===部件-钢管
-        tubelar_name = (
-            "tubelar"
-            if (self.pullroll["x_exist"] or self.pullroll["y_exist"])
-            else "union"
-        )
 
         s = mdb.models[self.modelname].ConstrainedSketch(
             name="__profile__", sheetSize=10000.0
@@ -211,12 +224,12 @@ class TaskHandler:
         s.setPrimaryObject(option=STANDALONE)
         s.rectangle(point1=(0.0, 0.0), point2=(self.x_len, self.y_len))
         p = mdb.models[self.modelname].Part(
-            name=tubelar_name, dimensionality=THREE_D, type=DEFORMABLE_BODY
+            name="tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
         )
-        p = mdb.models[self.modelname].parts[tubelar_name]
+        p = mdb.models[self.modelname].parts["tubelar"]
         p.BaseShellExtrude(sketch=s, depth=self.z_len)
         s.unsetPrimaryObject()
-        p = mdb.models[self.modelname].parts[tubelar_name]
+        p = mdb.models[self.modelname].parts["tubelar"]
         del mdb.models[self.modelname].sketches["__profile__"]
 
         # ===材料-钢
@@ -248,11 +261,11 @@ class TaskHandler:
         )
 
         # ===创建材料-拉杆
-        mdb.models[self.modelname].Material(name="steel_pullroll")
-        mdb.models[self.modelname].materials["steel_pullroll"].Elastic(
+        mdb.models[self.modelname].Material(name="material_steelbar")
+        mdb.models[self.modelname].materials["material_steelbar"].Elastic(
             table=((200000.0, 0.25),)
         )
-        mdb.models[self.modelname].materials["steel_pullroll"].Plastic(
+        mdb.models[self.modelname].materials["material_steelbar"].Plastic(
             table=self.steelbar_plasticity_model
         )
 
@@ -263,7 +276,7 @@ class TaskHandler:
 
         # ===创建截面-钢管
         mdb.models[self.modelname].HomogeneousShellSection(
-            name=tubelar_name,
+            name="tubelar",
             preIntegrate=OFF,
             material="steel_tube",
             thicknessType=UNIFORM,
@@ -294,12 +307,12 @@ class TaskHandler:
         )
 
         # ===指派截面-钢管
-        p = mdb.models[self.modelname].parts[tubelar_name]
+        p = mdb.models[self.modelname].parts["tubelar"]
         region = regionToolset.Region(faces=p.faces)
-        p = mdb.models[self.modelname].parts[tubelar_name]
+        p = mdb.models[self.modelname].parts["tubelar"]
         p.SectionAssignment(
             region=region,
-            sectionName=tubelar_name,
+            sectionName="tubelar",
             offset=0.0,
             offsetType=BOTTOM_SURFACE,
             offsetField="",
@@ -312,7 +325,7 @@ class TaskHandler:
             previous="Initial",
             maxNumInc=10000,
             initialInc=0.01,
-            minInc=1e-06,
+            minInc=1e-07,
             nlgeom=ON,
         )
         mdb.models[self.modelname].steps["Step-1"].setValues(
@@ -330,104 +343,27 @@ class TaskHandler:
         a.Instance(name="concrete-1", part=p, dependent=ON)
 
         # ===创建钢管
-        p = mdb.models[self.modelname].parts[tubelar_name]
-        a.Instance(name="%s-1" % tubelar_name, part=p, dependent=ON)
+        p = mdb.models[self.modelname].parts["tubelar"]
+        a.Instance(name="%s-1" % "tubelar", part=p, dependent=ON)
 
-        if not self.pullroll["ushape"]:
-            # ===创建部件-拉杆X
-            s = mdb.models[self.modelname].ConstrainedSketch(
-                name="__profile__", sheetSize=200.0
-            )
-            g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
-            s.setPrimaryObject(option=STANDALONE)
-            s.Line(point1=(0, 0), point2=(self.x_len, 0))
-            s.HorizontalConstraint(entity=g[2], addUndoState=False)
-            p = mdb.models[self.modelname].Part(
-                name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
-            )
-            p = mdb.models[self.modelname].parts["pullroll_x"]
-            p.BaseWire(sketch=s)
-            s.unsetPrimaryObject()
-            p = mdb.models[self.modelname].parts["pullroll_x"]
-            del mdb.models[self.modelname].sketches["__profile__"]
-            # ===创建部件-拉杆Y
+        # ===创建拉杆
+        if self.rod_exist:
             s1 = mdb.models[self.modelname].ConstrainedSketch(
                 name="__profile__", sheetSize=200.0
             )
             g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
             s1.setPrimaryObject(option=STANDALONE)
-            s1.Line(point1=(0, 0), point2=(0, self.y_len))
-            s1.VerticalConstraint(entity=g[2], addUndoState=False)
-            p = mdb.models[self.modelname].Part(
-                name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
-            )
-            p = mdb.models[self.modelname].parts["pullroll_y"]
-            p.BaseWire(sketch=s1)
-            s1.unsetPrimaryObject()
-            p = mdb.models[self.modelname].parts["pullroll_y"]
-            del mdb.models[self.modelname].sketches["__profile__"]
-        else:
-            # ===创建部件-拉杆x
-            s1 = mdb.models[self.modelname].ConstrainedSketch(
-                name="__profile__", sheetSize=200.0
-            )
-            g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
-            s1.setPrimaryObject(option=STANDALONE)
-            s1.Line(
-                point1=(0, self.gap),
-                point2=(self.x_len / 2, 0),
-            )
-            s1.Line(
-                point1=(0, 0 - self.gap),
-                point2=(self.x_len / 2, 0),
-            )
-            s1.Line(
-                point1=(self.x_len, 0 + self.gap),
-                point2=(self.x_len / 2, 0),
-            )
-            s1.Line(
-                point1=(self.x_len, 0 - self.gap),
-                point2=(self.x_len / 2, 0),
-            )
-            p = mdb.models[self.modelname].Part(
-                name="pullroll_x", dimensionality=THREE_D, type=DEFORMABLE_BODY
-            )
-            p = mdb.models[self.modelname].parts["pullroll_x"]
-            p.BaseWire(sketch=s1)
-            s1.unsetPrimaryObject()
-            p = mdb.models[self.modelname].parts["pullroll_x"]
-            del mdb.models[self.modelname].sketches["__profile__"]
+            for p1, p2 in self.pullroll["pattern_rod"]:
+                p1, p2 = map(tuple, (p1, p2))
+                s1.Line(point1=p1, point2=p2)
 
-            # ===创建部件-拉杆y
-            s1 = mdb.models[self.modelname].ConstrainedSketch(
-                name="__profile__", sheetSize=200.0
-            )
-            g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
-            s1.setPrimaryObject(option=STANDALONE)
-            s1.Line(
-                point1=(0 + self.gap, 0),
-                point2=(0, self.y_len / 2),
-            )
-            s1.Line(
-                point1=(0 - self.gap, 0),
-                point2=(0, self.y_len / 2),
-            )
-            s1.Line(
-                point1=(0 + self.gap, self.y_len),
-                point2=(0, self.y_len / 2),
-            )
-            s1.Line(
-                point1=(0 - self.gap, self.y_len),
-                point2=(0, self.y_len / 2),
-            )
             p = mdb.models[self.modelname].Part(
-                name="pullroll_y", dimensionality=THREE_D, type=DEFORMABLE_BODY
+                name="rod_layer", dimensionality=THREE_D, type=DEFORMABLE_BODY
             )
-            p = mdb.models[self.modelname].parts["pullroll_y"]
+            p = mdb.models[self.modelname].parts["rod_layer"]
             p.BaseWire(sketch=s1)
             s1.unsetPrimaryObject()
-            p = mdb.models[self.modelname].parts["pullroll_y"]
-            session.viewports["Viewport: 1"].setValues(displayedObject=p)
+            p = mdb.models[self.modelname].parts["rod_layer"]
             del mdb.models[self.modelname].sketches["__profile__"]
 
         # ===创建部件-中心立杆
@@ -442,55 +378,35 @@ class TaskHandler:
         )
         s.HorizontalConstraint(entity=g[2], addUndoState=False)
         p = mdb.models[self.modelname].Part(
-            name="center_roll", dimensionality=THREE_D, type=DEFORMABLE_BODY
+            name="pole", dimensionality=THREE_D, type=DEFORMABLE_BODY
         )
-        p = mdb.models[self.modelname].parts["center_roll"]
+        p = mdb.models[self.modelname].parts["pole"]
         p.BaseWire(sketch=s)
         s.unsetPrimaryObject()
-        p = mdb.models[self.modelname].parts["center_roll"]
+        p = mdb.models[self.modelname].parts["pole"]
         del mdb.models[self.modelname].sketches["__profile__"]
 
-        # ===创建截面-拉杆X
+        # ===创建截面-拉杆
         mdb.models[self.modelname].TrussSection(
-            name="pullroll_x",
-            material="steel_pullroll",
-            area=self.pullroll["area"],
-        )
-
-        # ===创建截面-拉杆Y
-        mdb.models[self.modelname].TrussSection(
-            name="pullroll_y",
-            material="steel_pullroll",
-            area=self.pullroll["area"],
+            name="sec_rod_layer",
+            material="material_steelbar",
+            area=self.pullroll["area_rod"],
         )
 
         # ===创建截面-中心立杆
         mdb.models[self.modelname].TrussSection(
-            name="center_roll",
-            material="steel_pullroll",
-            area=self.pullroll["area_center"],
+            name="pole",
+            material="material_steelbar",
+            area=self.pullroll["area_pole"],
         )
 
-        # ===指派截面-拉杆X
-        p = mdb.models[self.modelname].parts["pullroll_x"]
+        # ===指派截面-拉杆
+        p = mdb.models[self.modelname].parts["rod_layer"]
         region = regionToolset.Region(edges=p.edges)
-        p = mdb.models[self.modelname].parts["pullroll_x"]
+        p = mdb.models[self.modelname].parts["rod_layer"]
         p.SectionAssignment(
             region=region,
-            sectionName="pullroll_x",
-            offset=0.0,
-            offsetType=MIDDLE_SURFACE,
-            offsetField="",
-            thicknessAssignment=FROM_SECTION,
-        )
-
-        # ===指派截面-拉杆Y
-        p = mdb.models[self.modelname].parts["pullroll_y"]
-        region = regionToolset.Region(edges=p.edges)
-        p = mdb.models[self.modelname].parts["pullroll_y"]
-        p.SectionAssignment(
-            region=region,
-            sectionName="pullroll_y",
+            sectionName="sec_rod_layer",
             offset=0.0,
             offsetType=MIDDLE_SURFACE,
             offsetField="",
@@ -498,12 +414,12 @@ class TaskHandler:
         )
 
         # ===指派截面-中心立杆
-        p = mdb.models[self.modelname].parts["center_roll"]
+        p = mdb.models[self.modelname].parts["pole"]
         region = regionToolset.Region(edges=p.edges)
-        p = mdb.models[self.modelname].parts["center_roll"]
+        p = mdb.models[self.modelname].parts["pole"]
         p.SectionAssignment(
             region=region,
-            sectionName="center_roll",
+            sectionName="pole",
             offset=0.0,
             offsetType=MIDDLE_SURFACE,
             offsetField="",
@@ -513,111 +429,62 @@ class TaskHandler:
         steel_union = tuple()
 
         # ===拉杆
-        for orientation in ("x", "y"):
-            """拉杆方向"""
-            orientation_union = tuple()
-            if self.pullroll["%s_exist" % orientation]:
-                # ===创建实例
-                p = mdb.models[self.modelname].parts["pullroll_%s" % orientation]
-                ins = a.Instance(
-                    name="pullroll_%s-1" % orientation, part=p, dependent=ON
-                )
-                orientation_union += (ins,)
-                # ===平移实例
-                a1 = mdb.models[self.modelname].rootAssembly
-                startvector = (
-                    (
-                        0.0,
-                        self.pullroll["x_distance"],
-                        self.pullroll["z_distance"],
-                    )
-                    if orientation == "x"
-                    else (
-                        self.pullroll["y_distance"],
-                        0.0,
-                        self.pullroll["z_distance"],
-                    )
-                )
-                a1.translate(
-                    instanceList=("pullroll_%s-1" % orientation,),
-                    vector=startvector,
-                )
-                # ===线性阵列实例(z方向)
-                a1 = mdb.models[self.modelname].rootAssembly
-                orientation_direction = (
-                    (0.0, 1.0, 0.0) if orientation == "x" else (1.0, 0.0, 0.0)
-                )
-                orientation_union += a1.LinearInstancePattern(
-                    instanceList=("pullroll_%s-1" % orientation,),
-                    direction1=(0.0, 0.0, 1.0),
-                    direction2=orientation_direction,
-                    number1=self.pullroll["z_number"],
-                    number2=self.pullroll["%s_number" % orientation],
-                    spacing1=self.pullroll["z_distance"],
-                    spacing2=self.pullroll["%s_distance" % orientation],
-                )
-
-                # ===中心立杆
-                if self.pullroll["ushape"]:
-                    # ===创建实例-中心立杆
-                    a1 = mdb.models[self.modelname].rootAssembly
-                    p = mdb.models[self.modelname].parts["center_roll"]
-                    a1.Instance(
-                        name="center_roll-%s-1" % orientation, part=p, dependent=ON
-                    )
-                    # ===旋转实例-中心立杆
-                    a1 = mdb.models[self.modelname].rootAssembly
-                    a1.rotate(
-                        instanceList=("center_roll-%s-1" % orientation,),
-                        axisPoint=(0, 0, 0),
-                        axisDirection=(0, 0 + 1, 0),
-                        angle=-90.0,
-                    )
-                    orientation_union += (
-                        a1.instances["center_roll-%s-1" % orientation],
-                    )
-                    # ===平移实例-中心立杆
-                    a1 = mdb.models[self.modelname].rootAssembly
-                    startvector = (
-                        (
-                            self.x_len / 2,
-                            self.pullroll["x_distance"],
-                            0,
-                        )
-                        if orientation == "x"
-                        else (
-                            self.pullroll["y_distance"],
-                            self.y_len / 2,
-                            0,
-                        )
-                    )
-                    a1.translate(
-                        instanceList=("center_roll-%s-1" % orientation,),
-                        vector=startvector,
-                    )
-
-                    # ===线性阵列实例
-                    orientation_direction = (
-                        (0.0, 1.0, 0.0) if orientation == "x" else (1.0, 0.0, 0.0)
-                    )
-                    number = self.pullroll["%s_number" % orientation]
-                    spacing = self.pullroll["%s_distance" % orientation]
-                    a1 = mdb.models[self.modelname].rootAssembly
-                    orientation_union += a1.LinearInstancePattern(
-                        instanceList=("center_roll-%s-1" % orientation,),
-                        direction1=orientation_direction,
-                        direction2=(0.0, 0.0, 1.0),
-                        number1=number,
-                        number2=1,
-                        spacing1=spacing,
-                        spacing2=1.0,
-                    )
-            steel_union += orientation_union
-
-        # ===合并实例-拉杆
-        if steel_union:
+        self.item_rod_cage = tuple()
+        if self.rod_exist:
+            # ===创建实例
+            p = mdb.models[self.modelname].parts["rod_layer"]
+            ins = a.Instance(name="rod_layer-1", part=p, dependent=ON)
+            self.item_rod_cage += (ins,)
+            # ===平移实例
             a1 = mdb.models[self.modelname].rootAssembly
-            steel_union += (a1.instances["tubelar-1"],)
+            a1.translate(
+                instanceList=("rod_layer-1",),
+                vector=[0, 0, self.pullroll["layer_spacing"]],
+            )
+            # ===线性阵列实例(z方向)
+            a1 = mdb.models[self.modelname].rootAssembly
+            self.item_rod_cage += a1.LinearInstancePattern(
+                instanceList=("rod_layer-1",),
+                direction1=(0.0, 0.0, 1.0),
+                direction2=(1.0, 0.0, 0.0),
+                number1=self.pullroll["number_layers"],
+                number2=1,
+                spacing1=self.pullroll["layer_spacing"],
+                spacing2=1.0,
+            )
+
+        # ===中心立杆
+        self.item_poles = tuple()
+        if self.pole_exist:
+            for i, pos in enumerate(self.pullroll["pattern_pole"]):
+                ins_name = "pole-%d" % (i + 1)
+                pos += [0]
+                # ===创建实例-中心立杆
+                a1 = mdb.models[self.modelname].rootAssembly
+                p = mdb.models[self.modelname].parts["pole"]
+                a1.Instance(name=ins_name, part=p, dependent=ON)
+                # ===旋转实例-中心立杆
+                a1 = mdb.models[self.modelname].rootAssembly
+                a1.rotate(
+                    instanceList=(ins_name,),
+                    axisPoint=(0, 0, 0),
+                    axisDirection=(0, 0 + 1, 0),
+                    angle=-90.0,
+                )
+                # ===平移实例-中心立杆
+                a1 = mdb.models[self.modelname].rootAssembly
+                a1.translate(
+                    instanceList=(ins_name,),
+                    vector=tuple(pos),
+                )
+                self.item_poles += (a1.instances[ins_name],)
+
+        # ===Merge实例-拉杆
+        if self.flag_union:
+            a1 = mdb.models[self.modelname].rootAssembly
+            steel_union = (
+                (a1.instances["tubelar-1"],) + self.item_poles + self.item_rod_cage
+            )
 
             a1.InstanceFromBooleanMerge(
                 name="union",
@@ -650,9 +517,7 @@ class TaskHandler:
         e2 = a.instances["union-1"].edges
         edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
 
-        if self.pullroll["ushape"] and (
-            self.pullroll["x_exist"] or self.pullroll["y_exist"]
-        ):
+        if self.pole_exist:
             v1 = a.instances["union-1"].vertices
             vert1 = v1.getByBoundingBox(
                 0 + self.gap,
@@ -686,9 +551,7 @@ class TaskHandler:
         e2 = a.instances["union-1"].edges
         edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
 
-        if self.pullroll["ushape"] and (
-            self.pullroll["x_exist"] or self.pullroll["y_exist"]
-        ):
+        if self.pole_exist:
             v1 = a.instances["union-1"].vertices
             vert1 = v1.getByBoundingBox(
                 0 + self.gap,
@@ -832,20 +695,26 @@ class TaskHandler:
         )
 
         # ===单元类型-桁架
-        elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
-        p = mdb.models[self.modelname].parts["union"]
-        e = p.edges
-        edges = e.getByBoundingCylinder(
-            center1=(self.x_len / 2, self.y_len / 2, 0),
-            center2=(self.x_len / 2, self.y_len / 2, self.z_len),
-            radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
-            - self.gap,
+        if self.flag_union:
+            elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
+            p = mdb.models[self.modelname].parts["union"]
+            e = p.edges
+            edges = e.getByBoundingCylinder(
+                center1=(self.x_len / 2, self.y_len / 2, 0),
+                center2=(self.x_len / 2, self.y_len / 2, self.z_len),
+                radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
+                - self.gap,
+            )
+            pickedRegions = (edges,)
+            p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
+        # ===划分网格-steel
+        if self.flag_union:
+            p = mdb.models[self.modelname].parts["union"]
+        else:
+            p = mdb.models[self.modelname].parts["tubelar"]
+        p.seedPart(
+            size=max(self.x_len, self.y_len), deviationFactor=0.1, minSizeFactor=0.1
         )
-        pickedRegions = (edges,)
-        p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
-        # ===划分网格-union
-        p = mdb.models[self.modelname].parts["union"]
-        p.seedPart(size=self.steel_seed[0], deviationFactor=0.1, minSizeFactor=0.1)
         e = p.edges
         for i, j in zip(["x_all", "y_all", "z_all"], [0, 1, 2]):
             pickedEdges = e.findAt(coordinates=self.edge_point[i])
@@ -1018,7 +887,7 @@ class TaskHandler:
                     self.meta["taskfolder"] + "\\result.json",
                 )
                 Utils.write_json(
-                    self.data,
+                    self.taskparams,
                     self.meta["taskfolder"] + "\\input.json",
                 )
                 print("json saved")
@@ -1060,9 +929,25 @@ class TaskHandler:
                 traceback.print_exc()
 
 
-i = 0
+control_json_path = os.path.join(TASK_FOLDER, "control.json")
+control_json = Utils.load_json(control_json_path)
+
+
+i = control_json["start_at"]
+
 while 1:
-    json_path = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks\\%d.json" % i
+    control_json = Utils.load_json(control_json_path)
+    flag = control_json["flag"]
+    if flag == 0:
+        pass
+    elif flag == 1:
+        time.sleep(60)
+        print("task suspended")
+        continue
+    elif flag == 2:
+        break
+
+    json_path = TASK_FOLDER + "\\%d.json" % i
     if not os.path.isfile(json_path):
         break
     print("task:", json_path)
