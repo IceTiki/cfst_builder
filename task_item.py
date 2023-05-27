@@ -34,10 +34,6 @@ class Utils:
 
         data = json.dumps(data, ensure_ascii=False)
         return data
-        out = Path("tmp.json")
-        out.write_text(data)
-
-    # get_encrypt_code()
 
 
 @dataclass
@@ -195,22 +191,22 @@ class RodPattern:
     layer_spacing: float
 
     @staticmethod
-    def get_orthogonal_pattern(x_number=1, y_number=1):
+    def get_division(number) -> tuple:
+        return tuple((i + 1) / (number + 1) for i in range(number))
+
+    @classmethod
+    def get_orthogonal_pattern(cla, x_number=1, y_number=1) -> tuple[Line2d]:
         rod_patten = tuple()
 
-        y_distance = 1 / (x_number + 1)
-        for i in range(x_number):
-            y_position = (i + 1) * y_distance
-            p1 = (0, y_position)
-            p2 = (1, y_position)
+        for i in cla.get_division(x_number):
+            p1 = (0, i)
+            p2 = (1, i)
             line = (p1, p2)
             rod_patten += (line,)
 
-        x_distance = 1 / (y_number + 1)
-        for i in range(y_number):
-            x_position = (i + 1) * x_distance
-            p1 = (x_position, 0)
-            p2 = (x_position, 1)
+        for i in cla.get_division(y_number):
+            p1 = (i, 0)
+            p2 = (i, 1)
             line = (p1, p2)
             rod_patten += (line,)
         return rod_patten
@@ -420,13 +416,13 @@ class AbaqusData:
     def material_concrte(self, table_len: int = 10000):
         """核心混凝土"""
         concrete_core_strength = (
-            self.concrete.strength_pressure * 1.25
-        )  # !圆柱体抗压强度约为f_ck的1.25倍(来源未知)
+            self.concrete.strength_criterion_pressure * 1.25
+        )  # !圆柱体抗压强度约为f_ck的1.25倍(估计值)
         concrete_model = constitutive_models.ConcreteConstitutiveModels(
             self.geometry.x_len,
             self.geometry.y_len,
             concrete_core_strength,
-            self.concrete.strength_pressure,
+            self.concrete.strength_criterion_pressure,
             self.geometry.tube_section_area,
             self.steel.strength_yield,
             self.pullroll.area_rod,
@@ -435,18 +431,24 @@ class AbaqusData:
             self.pullroll.number_layer_rods,
         )
 
-        x = np.linspace(10e-5, 0.3, table_len)
-        y = concrete_model.model(x)
-        x[0] = 0
+        elastic_x = concrete_model.epsilon_0 / 20
+        elastic_y = concrete_model.model(elastic_x)
+        elastic_modulus = float(elastic_y / elastic_x)
 
-        # ===混凝土塑性损伤的断裂能
-        concrete_gfi = np.interp(concrete_core_strength, [20, 40], [40, 120])
+        x = np.linspace(elastic_x, 0.3, table_len)
+        y = concrete_model.model(x)
+        x = x - elastic_x
+
+        # ===混凝土塑性损伤的断裂能(COMITE EURO-INTERNATIONAL DU BETON. CEB-FIP MODEL CODE 1990: DESIGN CODE[M/OL]. Thomas Telford Publishing, 1993[2023-05-22]. http://www.icevirtuallibrary.com/doi/book/10.1680/ceb-fipmc1990.35430. DOI:10.1680/ceb-fipmc1990.35430.)
+        # G_{f0}取值取决于最大骨料粒径(25N/m-8mm,30N/m-16mm,58N/m-32mm)(取值见CEB-FIP MODEL CODE 1990: DESIGN CODE的Table 2.1.4)
+        gfi0 = 58
+        concrete_gfi = gfi0 * (self.concrete.strength_pressure / 10) ** (0.7)
 
         return {
             "sigma": y.tolist(),
             "epsilon": x.tolist(),
-            "elastic_modulus": self.concrete.elastic_modulus,
-            "strength_fracture": concrete_core_strength / 10,
+            "elastic_modulus": elastic_modulus,
+            "strength_fracture": self.concrete.strength_tensile,
             "gfi": concrete_gfi,
         }
 

@@ -82,6 +82,7 @@ class TaskHandler:
                 self.materials["concrete"]["gfi"],
             ),
         )
+        self.concrete_elastic_modulus = self.materials["concrete"]["elastic_modulus"]
         # ===钢管
         materdata = self.materials["steel"]
         self.steel_plasticity_model = tuple(
@@ -244,7 +245,7 @@ class TaskHandler:
         # ===创建材料-混凝土
         mdb.models[self.modelname].Material(name="concrete")
         mdb.models[self.modelname].materials["concrete"].ConcreteDamagedPlasticity(
-            table=((36.0, 0.1, 1.16, 0.63, 0.0005),)
+            table=((40.0, 0.1, 1.16, 0.6667, 0.0005),)
         )
         mdb.models[self.modelname].materials[
             "concrete"
@@ -257,7 +258,7 @@ class TaskHandler:
             table=self.concrete_gfi, type=GFI
         )
         mdb.models[self.modelname].materials["concrete"].Elastic(
-            table=((34500.0, 0.2),)
+            table=((self.concrete_elastic_modulus, 0.2),)
         )
 
         # ===创建材料-拉杆
@@ -401,17 +402,18 @@ class TaskHandler:
         )
 
         # ===指派截面-拉杆
-        p = mdb.models[self.modelname].parts["rod_layer"]
-        region = regionToolset.Region(edges=p.edges)
-        p = mdb.models[self.modelname].parts["rod_layer"]
-        p.SectionAssignment(
-            region=region,
-            sectionName="sec_rod_layer",
-            offset=0.0,
-            offsetType=MIDDLE_SURFACE,
-            offsetField="",
-            thicknessAssignment=FROM_SECTION,
-        )
+        if self.rod_exist:
+            p = mdb.models[self.modelname].parts["rod_layer"]
+            region = regionToolset.Region(edges=p.edges)
+            p = mdb.models[self.modelname].parts["rod_layer"]
+            p.SectionAssignment(
+                region=region,
+                sectionName="sec_rod_layer",
+                offset=0.0,
+                offsetType=MIDDLE_SURFACE,
+                offsetField="",
+                thicknessAssignment=FROM_SECTION,
+            )
 
         # ===指派截面-中心立杆
         p = mdb.models[self.modelname].parts["pole"]
@@ -514,8 +516,12 @@ class TaskHandler:
                 [(self.x_len / 2, self.y_len / 2, 0)],
             )
         )
-        e2 = a.instances["union-1"].edges
-        edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
+        if self.flag_union:
+            e2 = a.instances["union-1"].edges
+            edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
+        else:
+            e2 = a.instances["tubelar-1"].edges
+            edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
 
         if self.pole_exist:
             v1 = a.instances["union-1"].vertices
@@ -548,8 +554,12 @@ class TaskHandler:
                 [(self.x_len / 2, self.y_len / 2, self.z_len)],
             )
         )
-        e2 = a.instances["union-1"].edges
-        edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
+        if self.flag_union:
+            e2 = a.instances["union-1"].edges
+            edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
+        else:
+            e2 = a.instances["tubelar-1"].edges
+            edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
 
         if self.pole_exist:
             v1 = a.instances["union-1"].vertices
@@ -649,10 +659,16 @@ class TaskHandler:
 
         # ===创建相互作用-钢管-混凝土
         a = mdb.models[self.modelname].rootAssembly
-        s1 = a.instances["union-1"].faces
-        side2Faces1 = s1.getSequenceFromMask(
-            mask=("[#f ]",),
-        )
+        if self.flag_union:
+            s1 = a.instances["union-1"].faces
+            side2Faces1 = s1.getSequenceFromMask(
+                mask=("[#f ]",),
+            )
+        else:
+            s1 = a.instances["tubelar-1"].faces
+            side2Faces1 = s1.getSequenceFromMask(
+                mask=("[#f ]",),
+            )
         region1 = regionToolset.Region(side2Faces=side2Faces1)
         a = mdb.models[self.modelname].rootAssembly
         s1 = a.instances["concrete-1"].faces
@@ -675,24 +691,25 @@ class TaskHandler:
         )
 
         # ===相互作用-钢筋-混凝土
-        a1 = mdb.models[self.modelname].rootAssembly
-        e1 = a1.instances["union-1"].edges
-        edges1 = e1.getByBoundingCylinder(
-            center1=(self.x_len / 2, self.y_len / 2, 0),
-            center2=(self.x_len / 2, self.y_len / 2, self.z_len),
-            radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
-            - self.gap,
-        )
-        region1 = regionToolset.Region(edges=edges1)
-        mdb.models[self.modelname].EmbeddedRegion(
-            name="roll-concrete",
-            embeddedRegion=region1,
-            hostRegion=None,
-            weightFactorTolerance=1e-06,
-            absoluteTolerance=0.0,
-            fractionalTolerance=0.05,
-            toleranceMethod=BOTH,
-        )
+        if self.flag_union:
+            a1 = mdb.models[self.modelname].rootAssembly
+            e1 = a1.instances["union-1"].edges
+            edges1 = e1.getByBoundingCylinder(
+                center1=(self.x_len / 2, self.y_len / 2, 0),
+                center2=(self.x_len / 2, self.y_len / 2, self.z_len),
+                radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
+                - self.gap,
+            )
+            region1 = regionToolset.Region(edges=edges1)
+            mdb.models[self.modelname].EmbeddedRegion(
+                name="roll-concrete",
+                embeddedRegion=region1,
+                hostRegion=None,
+                weightFactorTolerance=1e-06,
+                absoluteTolerance=0.0,
+                fractionalTolerance=0.05,
+                toleranceMethod=BOTH,
+            )
 
         # ===单元类型-桁架
         if self.flag_union:
@@ -726,7 +743,10 @@ class TaskHandler:
                 constraint=FINER,
             )
 
-        p = mdb.models[self.modelname].parts["union"]
+        if self.flag_union:
+            p = mdb.models[self.modelname].parts["union"]
+        else:
+            p = mdb.models[self.modelname].parts["tubelar"]
         p.generateMesh()
         # ===划分网格-concrete
         p = mdb.models[self.modelname].parts["concrete"]
