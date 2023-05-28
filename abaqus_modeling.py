@@ -16,7 +16,6 @@ import urllib2
 
 TASK_FOLDER = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks"
 GAP = 1  #  取一个小值, 用于几何选取函数等, 用于将选框向内缩一点
-UGAP = 10  #  U型连接件的建模偏移(建模时用V字形拉杆模拟U形拉杆, 偏移量就是V在顶端的岔开距离的一半)
 
 
 class Utils:
@@ -51,7 +50,6 @@ class Utils:
 
 class TaskHandler:
     gap = GAP
-    ugap = UGAP
 
     def __init__(self, taskparams):
         self.taskparams = taskparams
@@ -556,10 +554,10 @@ class TaskHandler:
         )
         if self.flag_union:
             e2 = a.instances["union-1"].edges
-            edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
+            edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
         else:
             e2 = a.instances["tubelar-1"].edges
-            edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
+            edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
 
         if self.pole_exist:
             v1 = a.instances["union-1"].vertices
