@@ -10,9 +10,6 @@ from materlib import materials, constitutive_models
 from tikilib import crypto as tc
 from tikilib import text as tt
 
-Point2d = tuple[float, float]
-Line2d = tuple[Point2d, Point2d]
-
 
 class Utils:
     def __encrypt(content: str):
@@ -54,6 +51,13 @@ class Geometry:
     steel_mesh : float
         钢材布种数量(x,y,z)方向
     """
+
+    mesh_table = {
+        "best": ((18, 18, 60), (18, 18, 60)),  # 3h
+        "excel": ((12, 12, 24), (12, 12, 30)),  # 7min
+        "nice": ((9, 9, 16), (7, 7, 20)),  # 2min
+        "fast": ((6, 6, 16), (5, 5, 12)),
+    }
 
     x_len: float
     y_len: float
@@ -182,6 +186,9 @@ class RodPattern:
         b_s, 柱纵向约束拉杆的间距(mm)
     """
 
+    Point2d = tuple[float, float]
+    Line2d = tuple[Point2d, Point2d]
+
     area_rod: float
     area_pole: float
     pattern_rod: tuple[Line2d]
@@ -191,11 +198,36 @@ class RodPattern:
     layer_spacing: float
 
     @staticmethod
-    def get_division(number) -> tuple:
+    def get_division(number: int) -> tuple:
+        """
+        获取分割区间的位置
+
+        Parameters
+        ---
+        number : int
+            分割区间的位置数
+
+        Examples
+        ---
+        >>> get_division(1)
+        (0.5)
+
+        >>> get_division(4)
+        (0.2, 0.4, 0.6, 0.8)
+        """
         return tuple((i + 1) / (number + 1) for i in range(number))
 
     @classmethod
     def get_orthogonal_pattern(cla, x_number=1, y_number=1) -> tuple[Line2d]:
+        """
+        获取约束拉杆的正交图案
+        Parameters
+        ---
+        x_number : int
+            平行x轴方向约束拉杆的数量
+        y_number : int
+            平行x轴方向约束拉杆的数量
+        """
         rod_patten = tuple()
 
         for i in cla.get_division(x_number):
