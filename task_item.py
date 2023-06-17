@@ -103,7 +103,7 @@ class Geometry:
 
         return datas
 
-    def __dict__(self):
+    def extract(self):
         return {
             "x_len": self.x_len,
             "y_len": self.y_len,
@@ -161,7 +161,7 @@ class ReferencePoint:
         position = tuple(i + j for i, j in zip(shift, datum))
         return cla(position, displacement)
 
-    def __dict__(self):
+    def extract(self):
         return {"position": self.position, "displacement": self.displacement}
 
 
@@ -302,7 +302,7 @@ class RodPattern:
             layer_spacing,
         )
 
-    def __dict__(self):
+    def extract(self):
         return {
             "area_rod": self.area_rod,
             "area_pole": self.area_pole,
@@ -358,7 +358,7 @@ class TaskMeta:
             "model_" + name,
         )
 
-    def __dict__(self):
+    def extract(self):
         return {
             "jobname": str(self.jobname),
             "caepath": str(self.caepath),
@@ -484,19 +484,18 @@ class AbaqusData:
             "gfi": concrete_gfi,
         }
 
-    @property
-    def json_task(self):
+    def extract(self) -> dict:
         return {
             "materials": {
                 "concrete": self.material_concrte,
                 "steel": self.material_tube,
                 "steelbar": self.material_rod,
             },
-            "geometry": self.geometry.__dict__(),
+            "geometry": self.geometry.extract(),
             "referpoint": {
-                "top": self.referpoint_top.__dict__(),
-                "bottom": self.referpoint_bottom.__dict__(),
+                "top": self.referpoint_top.extract(),
+                "bottom": self.referpoint_bottom.extract(),
             },
-            "pullroll": self.pullroll.__dict__(),
-            "meta": self.meta.__dict__(),
+            "pullroll": self.pullroll.extract(),
+            "meta": self.meta.extract(),
         }

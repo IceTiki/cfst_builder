@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
+# abaqus库
 from abaqus import *
 from abaqusConstants import *
 from caeModules import *
 from caeModules import *
 from driverUtils import executeOnCaeStartup
+
+# 标准库
 import math
 import json
 import io
@@ -16,6 +19,91 @@ import urllib2
 
 TASK_FOLDER = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks"
 GAP = 1  #  取一个小值, 用于几何选取函数等, 用于将选框向内缩一点
+
+
+class Path:
+    ABAQUS_WORKDIR = os.path.abspath(os.getcwd())
+
+    def __init__(self, path):
+        if isinstance(path, self.__class__):
+            self.__dict__.update(path.__dict__)
+        elif isinstance(path, str):
+            self.path = path
+
+    def __str__(self):
+        return self.path
+
+    def __div__(self, path):
+        new_path = os.path.join(self.path, str(path))
+        return self.__class__(new_path)
+
+    def __rdiv__(self, path):
+        new_path = os.path.join(str(path), self.path)
+        return self.__class__(new_path)
+
+    @property
+    def absolote(self):
+        return self.__class__(os.path.abspath(self.path))
+
+    @property
+    def parent(self):
+        return self.__class__(os.path.dirname(self.path))
+
+    @property
+    def name(self):
+        """
+        Returns
+        ---
+        name : str
+            文件名
+        """
+        return os.path.split(self.path)[1]
+
+    @property
+    def exists(self):
+        return os.path.exists(self.path)
+
+    def traversing_generator(
+        self, iter_file=True, topdown=False, path_filter=lambda x: True
+    ):
+        """
+        遍历路径中的文件或文件夹的生成器(生成绝对路径)
+        iter_file : bool
+            True遍历文件|False遍历文件夹
+        topdown : bool
+            是否从根文件夹开始遍历
+        path_filter : Callable
+            Callable返回绝对路径之前, 先用该过滤器过滤
+            过滤器: 接受绝对路径(Path), 传出布尔值(bool)
+
+        Yields
+        ---
+        item : Path
+            文件夹内的文件/文件夹的绝对路径
+        """
+        for root, dirs, files in os.walk(self.path, topdown=topdown):
+            root = Path(root)
+            if iter_file is True:
+                for name in files:
+                    file_dir = root / name
+                    file_dir = file_dir.absolote
+                    if path_filter(file_dir):
+                        yield file_dir
+            if iter_file is False:
+                for name in dirs:
+                    folder_dir = root / name
+                    folder_dir = folder_dir.absolote
+                    if path_filter(folder_dir):
+                        yield folder_dir
+
+    def mkdirs(self):
+        if os.path.isdir(self.path):
+            return True
+        elif os.path.isfile(self.path):
+            raise ValueError("%s is a file" % self.path)
+        else:
+            os.makedirs(name=self.path)
+            return True
 
 
 class Utils:
@@ -36,16 +124,6 @@ class Utils:
         response = urllib2.urlopen(url)
         content = response.read()
         return content
-
-    @staticmethod
-    def mkdirs(path):
-        if os.path.isdir(path):
-            return True
-        elif os.path.isfile(path):
-            raise ValueError("%s is a file" % path)
-        else:
-            os.makedirs(name=path)
-            return True
 
 
 class TaskHandler:
@@ -144,34 +222,34 @@ class TaskHandler:
     def edge_point(self):
         return {
             "bottom_all": (
-                (self.x_len / 2, 0, 0),
-                (self.x_len / 2, self.y_len, 0),
-                (0, self.y_len / 2, 0),
-                (self.x_len, self.y_len / 2, 0),
+                (self.x_len / 2.0, 0, 0),
+                (self.x_len / 2.0, self.y_len, 0),
+                (0, self.y_len / 2.0, 0),
+                (self.x_len, self.y_len / 2.0, 0),
             ),
             "top_all": (
-                (self.x_len / 2, 0, self.z_len),
-                (self.x_len / 2, self.y_len, self.z_len),
-                (0, self.y_len / 2, self.z_len),
-                (self.x_len, self.y_len / 2, self.z_len),
+                (self.x_len / 2.0, 0, self.z_len),
+                (self.x_len / 2.0, self.y_len, self.z_len),
+                (0, self.y_len / 2.0, self.z_len),
+                (self.x_len, self.y_len / 2.0, self.z_len),
             ),
             "x_all": (
-                (self.x_len / 2, 0, 0),
-                (self.x_len / 2, self.y_len, 0),
-                (self.x_len / 2, 0, self.z_len),
-                (self.x_len / 2, self.y_len, self.z_len),
+                (self.x_len / 2.0, 0, 0),
+                (self.x_len / 2.0, self.y_len, 0),
+                (self.x_len / 2.0, 0, self.z_len),
+                (self.x_len / 2.0, self.y_len, self.z_len),
             ),
             "y_all": (
-                (0, self.y_len / 2, 0),
-                (self.x_len, self.y_len / 2, 0),
-                (0, self.y_len / 2, self.z_len),
-                (self.x_len, self.y_len / 2, self.z_len),
+                (0, self.y_len / 2.0, 0),
+                (self.x_len, self.y_len / 2.0, 0),
+                (0, self.y_len / 2.0, self.z_len),
+                (self.x_len, self.y_len / 2.0, self.z_len),
             ),
             "z_all": (
-                (self.x_len, 0, self.z_len / 2),
-                (0, self.y_len, self.z_len / 2),
-                (0, 0, self.z_len / 2),
-                (self.x_len, self.y_len, self.z_len / 2),
+                (self.x_len, 0, self.z_len / 2.0),
+                (0, self.y_len, self.z_len / 2.0),
+                (0, 0, self.z_len / 2.0),
+                (self.x_len, self.y_len, self.z_len / 2.0),
             ),
         }
 
@@ -511,7 +589,7 @@ class TaskHandler:
         f1 = a.instances["concrete-1"].faces
         faces1 = f1.findAt(
             coordinates=tuple(
-                [(self.x_len / 2, self.y_len / 2, 0)],
+                [(self.x_len / 2.0, self.y_len / 2.0, 0)],
             )
         )
         if self.flag_union:
@@ -549,7 +627,7 @@ class TaskHandler:
         f1 = a.instances["concrete-1"].faces
         faces1 = f1.findAt(
             coordinates=tuple(
-                [(self.x_len / 2, self.y_len / 2, self.z_len)],
+                [(self.x_len / 2.0, self.y_len / 2.0, self.z_len)],
             )
         )
         if self.flag_union:
@@ -693,8 +771,8 @@ class TaskHandler:
             a1 = mdb.models[self.modelname].rootAssembly
             e1 = a1.instances["union-1"].edges
             edges1 = e1.getByBoundingCylinder(
-                center1=(self.x_len / 2, self.y_len / 2, 0),
-                center2=(self.x_len / 2, self.y_len / 2, self.z_len),
+                center1=(self.x_len / 2.0, self.y_len / 2.0, 0),
+                center2=(self.x_len / 2.0, self.y_len / 2.0, self.z_len),
                 radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
                 - self.gap,
             )
@@ -715,8 +793,8 @@ class TaskHandler:
             p = mdb.models[self.modelname].parts["union"]
             e = p.edges
             edges = e.getByBoundingCylinder(
-                center1=(self.x_len / 2, self.y_len / 2, 0),
-                center2=(self.x_len / 2, self.y_len / 2, self.z_len),
+                center1=(self.x_len / 2.0, self.y_len / 2.0, 0),
+                center2=(self.x_len / 2.0, self.y_len / 2.0, self.z_len),
                 radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
                 - self.gap,
             )
@@ -893,9 +971,10 @@ class TaskHandler:
                 )
 
                 top_point_data = {
-                    "sigma": [-i[1] for i in xy0],
-                    "sigma(kN)": [-i[1] / 1000 for i in xy0],
-                    "epsilon": [-i[1] / self.z_len for i in xy1],
+                    "load": [-i[1] for i in xy0],
+                    "load_k": [-i[1] / 1000.0 for i in xy0],
+                    "displacement": xy1,
+                    "epsilon": [-i[1] / float(self.z_len) for i in xy1],
                     "time": [i[0] for i in xy0],
                 }
 
