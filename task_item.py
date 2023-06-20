@@ -333,6 +333,10 @@ class TaskMeta:
         是否提交作业
     time_limit : float
         作业最高运行时间(秒)
+
+    static_step : dict
+        静态分析步
+
     """
 
     jobname: str
@@ -342,6 +346,18 @@ class TaskMeta:
 
     submit: bool = True
     time_limit: float = None
+    static_step: dict = {
+        "maxNumInc": 10000,  # 最大步数
+        "initialInc": 0.01,  # 初始步长
+        "minInc": 1e-07,  # 最小步长
+        "nlgeom": True,  # 非线性
+        "stabilization_method": "DISSIPATED_ENERGY_FRACTION",  # 自动稳定方式
+        "continue_damping_factors": True,
+        "adaptive_damping_ratio": 0.05,
+    }
+    #   "stabilization_method": "NONE",  # 自动稳定方式
+    #   "continue_damping_factors": False,
+    #   "adaptive_damping_ratio": 0,
 
     @property
     def caepath(self):
@@ -376,17 +392,19 @@ class AbaqusData:
     Parameters
     ---
     meta : TaskMeta
-    ---
-    concrete : materials.Concrete
-    steel : materials.Steel
-    steelbar : materials.SteelBar
-        约束拉杆材料
-    ---
+
     geometry : Geometry
-    pullroll : Pullroll
+    rod_pattern : Pullroll
         约束拉杆分布
     reterpoint_top, referpoint_bottom: ReferencePoint
         上下参考点
+
+    material_concrete : materials.Concrete
+    material_tubelar : materials.Steel
+    material_rod : materials.SteelBar
+        约束拉杆材料
+    material_pole: materials.SteelBar
+        中心立杆材料
 
     Note
     ---
@@ -395,42 +413,44 @@ class AbaqusData:
     """
 
     meta: TaskMeta
-    concrete: materials.Concrete
-    steel: materials.Steel
-    steelbar: materials.SteelBar
     geometry: Geometry
-    pullroll: RodPattern
+    rod_pattern: RodPattern
     referpoint_top: ReferencePoint
     referpoint_bottom: ReferencePoint
+    material_concrete: materials.Concrete
+    material_tubelar: materials.Steel
+    material_rod: materials.SteelBar
+    material_pole: materials.SteelBar
 
     @property
-    def material_tube(self, table_len: int = 10000):
+    def __extract_material_tubelar(self, table_len: int = 10000) -> dict:
         """钢管"""
         steel_model = constitutive_models.SteelTubelarConstitutiveModels(
-            self.steel.strength_yield,
-            self.steel.strength_tensile,
-            self.steel.elastic_modulus,
+            self.material_tubelar.strength_yield,
+            self.material_tubelar.strength_tensile,
+            self.material_tubelar.elastic_modulus,
         )
-        sigma_yield = self.steel.strength_yield / self.steel.elastic_modulus
+        sigma_yield = (
+            self.material_tubelar.strength_yield / self.material_tubelar.elastic_modulus
+        )
 
         x = np.linspace(sigma_yield, 0.2, table_len)
         y = steel_model.model(x)
         return {
             "sigma": y.tolist(),
             "epsilon": (x - sigma_yield).tolist(),
-            "elastic_modulus": self.steel.elastic_modulus,
+            "elastic_modulus": self.material_tubelar.elastic_modulus,
+            "poissons_ratio": 0.25,
         }
 
-    @property
-    def material_rod(self, table_len: int = 10000):
-        """约束拉杆"""
+    def __extract_material_steelbar(
+        self, steelbar: materials.SteelBar, table_len: int = 10000
+    ) -> dict:
         steelbar_model = constitutive_models.PullrollConstitutiveModels(
-            self.steelbar.strength_criterion_yield,
-            self.steelbar.elastic_modulus,
+            steelbar.strength_criterion_yield,
+            steelbar.elastic_modulus,
         )
-        sigma_yield = (
-            self.steelbar.strength_criterion_yield / self.steelbar.elastic_modulus
-        )
+        sigma_yield = steelbar.strength_criterion_yield / steelbar.elastic_modulus
 
         x = np.linspace(
             sigma_yield,
@@ -441,26 +461,37 @@ class AbaqusData:
         return {
             "sigma": y.tolist(),
             "epsilon": (x - sigma_yield).tolist(),
-            "elastic_modulus": self.steelbar.elastic_modulus,
+            "elastic_modulus": steelbar.elastic_modulus,
+            "poissons_ratio": 0.25,
         }
 
     @property
-    def material_concrte(self, table_len: int = 10000):
+    def __extract_material_rod(self, table_len: int = 10000) -> dict:
+        """约束拉杆"""
+        return self.__extract_material_steelbar(self.material_rod, table_len)
+
+    @property
+    def __extract_material_pole(self, table_len: int = 10000) -> dict:
+        """中心立杆"""
+        return self.__extract_material_steelbar(self.material_pole, table_len)
+
+    @property
+    def __extract_material_concrete(self, table_len: int = 10000) -> dict:
         """核心混凝土"""
         concrete_core_strength = (
-            self.concrete.strength_criterion_pressure * 1.25
+            self.material_concrete.strength_criterion_pressure * 1.25
         )  # !圆柱体抗压强度约为f_ck的1.25倍(估计值)
         concrete_model = constitutive_models.ConcreteConstitutiveModels(
             self.geometry.x_len,
             self.geometry.y_len,
             concrete_core_strength,
-            self.concrete.strength_criterion_pressure,
+            self.material_concrete.strength_criterion_pressure,
             self.geometry.tube_section_area,
-            self.steel.strength_yield,
-            self.pullroll.area_rod,
-            self.steelbar.strength_criterion_yield,
-            self.pullroll.layer_spacing,
-            self.pullroll.number_layer_rods,
+            self.material_tubelar.strength_yield,
+            self.rod_pattern.area_rod,
+            self.material_rod.strength_criterion_yield,
+            self.rod_pattern.layer_spacing,
+            self.rod_pattern.number_layer_rods,
         )
 
         elastic_x = concrete_model.epsilon_0 / 20
@@ -474,28 +505,38 @@ class AbaqusData:
         # ===混凝土塑性损伤的断裂能(COMITE EURO-INTERNATIONAL DU BETON. CEB-FIP MODEL CODE 1990: DESIGN CODE[M/OL]. Thomas Telford Publishing, 1993[2023-05-22]. http://www.icevirtuallibrary.com/doi/book/10.1680/ceb-fipmc1990.35430. DOI:10.1680/ceb-fipmc1990.35430.)
         # G_{f0}取值取决于最大骨料粒径(25N/m-8mm,30N/m-16mm,58N/m-32mm)(取值见CEB-FIP MODEL CODE 1990: DESIGN CODE的Table 2.1.4)
         gfi0 = 58
-        concrete_gfi = gfi0 * (self.concrete.strength_pressure / 10) ** (0.7)
+        concrete_gfi = gfi0 * (self.material_concrete.strength_pressure / 10) ** (0.7)
 
         return {
             "sigma": y.tolist(),
             "epsilon": x.tolist(),
             "elastic_modulus": elastic_modulus,
-            "strength_fracture": self.concrete.strength_tensile,
+            "poissons_ratio": 0.2,
+            "strength_fracture": self.material_concrete.strength_tensile,
             "gfi": concrete_gfi,
+            "cdp_params": [  # 混凝土塑性损伤模型的参数
+                40.0,
+                0.1,
+                1.16,
+                0.6667,
+                0.0005,
+            ],
         }
 
     def extract(self) -> dict:
         return {
+            "version": "alpha",
             "materials": {
-                "concrete": self.material_concrte,
-                "steel": self.material_tube,
-                "steelbar": self.material_rod,
+                "concrete": self.__extract_material_concrete,
+                "tubelar": self.__extract_material_tubelar,
+                "rod": self.__extract_material_rod,
+                "pole": self.__extract_material_pole,
             },
             "geometry": self.geometry.extract(),
             "referpoint": {
                 "top": self.referpoint_top.extract(),
                 "bottom": self.referpoint_bottom.extract(),
             },
-            "pullroll": self.pullroll.extract(),
+            "rod_pattern": self.rod_pattern.extract(),
             "meta": self.meta.extract(),
         }
