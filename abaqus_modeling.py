@@ -138,6 +138,7 @@ class TaskExecutor:
             self.referpoint,
             self.rod_pattern,
             self.meta,
+            self.misc,
             self.comment,
         ) = (
             params["materials"],
@@ -145,6 +146,7 @@ class TaskExecutor:
             params["referpoint"],
             params["rod_pattern"],
             params["meta"],
+            params["misc"],
             params["comment"],
         )
 
@@ -235,7 +237,6 @@ class TaskExecutor:
             self.caepath,
             self.taskfolder,
             self.modelname,
-            self.performance,
         ) = map(
             str,
             (
@@ -243,7 +244,6 @@ class TaskExecutor:
                 meta_info["caepath"],
                 meta_info["taskfolder"],
                 meta_info["modelname"],
-                meta_info["performance"],
             ),
         )
 
@@ -251,7 +251,18 @@ class TaskExecutor:
         self.workdir_odb = os.path.join(self.workdir, "\%s.odb" % self.jobname)
         self.gap = meta_info["gap"]
 
-        static_step_params = meta_info["static_step"]
+        # 杂项参数
+        self.misc["friction_factor_between_concrete_tubelar"] = self.misc.pop(
+            "friction_factor_between_concrete_tubelar"
+        )
+        self.misc["tubelar_num_int_pts"] = self.misc.pop("tubelar_num_int_pts")
+        performance_params = self.misc["performance"]
+        self.performance = {
+            "memory": performance_params["memory"],
+            "num_cpus": performance_params["num_cpus"],
+            "num_gpus": performance_params["num_gpus"],
+        }
+        static_step_params = self.misc["static_step"]
         self.static_step = {
             "maxNumInc": static_step_params["maxNumInc"],
             "initialInc": static_step_params["initialInc"],
@@ -269,34 +280,34 @@ class TaskExecutor:
         x_len, y_len, z_len = self.x_len, self.y_len, self.z_len
         return {
             "bottom_all": (
-                (self.x_len / 2.0, 0, 0),
-                (self.x_len / 2.0, y_len, 0),
+                (x_len / 2.0, 0, 0),
+                (x_len / 2.0, y_len, 0),
                 (0, y_len / 2.0, 0),
-                (self.x_len, y_len / 2.0, 0),
+                (x_len, y_len / 2.0, 0),
             ),
             "top_all": (
-                (self.x_len / 2.0, 0, z_len),
-                (self.x_len / 2.0, y_len, z_len),
+                (x_len / 2.0, 0, z_len),
+                (x_len / 2.0, y_len, z_len),
                 (0, y_len / 2.0, z_len),
-                (self.x_len, y_len / 2.0, z_len),
+                (x_len, y_len / 2.0, z_len),
             ),
             "x_all": (
-                (self.x_len / 2.0, 0, 0),
-                (self.x_len / 2.0, y_len, 0),
-                (self.x_len / 2.0, 0, z_len),
-                (self.x_len / 2.0, y_len, z_len),
+                (x_len / 2.0, 0, 0),
+                (x_len / 2.0, y_len, 0),
+                (x_len / 2.0, 0, z_len),
+                (x_len / 2.0, y_len, z_len),
             ),
             "y_all": (
                 (0, y_len / 2.0, 0),
-                (self.x_len, y_len / 2.0, 0),
+                (x_len, y_len / 2.0, 0),
                 (0, y_len / 2.0, z_len),
-                (self.x_len, y_len / 2.0, z_len),
+                (x_len, y_len / 2.0, z_len),
             ),
             "z_all": (
-                (self.x_len, 0, z_len / 2.0),
+                (x_len, 0, z_len / 2.0),
                 (0, y_len, z_len / 2.0),
                 (0, 0, z_len / 2.0),
-                (self.x_len, y_len, z_len / 2.0),
+                (x_len, y_len, z_len / 2.0),
             ),
         }
 
@@ -554,14 +565,14 @@ class TaskExecutor:
             a1 = task_model.rootAssembly
             steel_union = (ins_tubelar,) + self.insset_poles + self.insset_rod_layer
 
-            ins_union = a1.InstanceFromBooleanMerge(
-                name="ins_union",
+            a1.InstanceFromBooleanMerge(
+                name="merge_union",
                 instances=steel_union,
                 originalInstances=DELETE,
                 mergeNodes=BOUNDARY_ONLY,
                 nodeMergingTolerance=1e-06,
                 domain=BOTH,
-            )
+            )  # 这一步会同时在part和instance里面创建merge_union(在part中创建的会去掉"-数字"后缀)
 
         # ======相互作用======
         # ===设置参考点
@@ -583,14 +594,14 @@ class TaskExecutor:
             )
         )
         if self.union_exist:
-            e2 = ins_union.edges
+            e2 = a.instances["merge_union"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
         else:
             e2 = a.instances["tubelar-1"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
 
         if self.pole_exist:
-            v1 = ins_union.vertices
+            v1 = a.instances["merge_union"].vertices
             vert1 = v1.getByBoundingBox(
                 0 + gap,
                 0 + gap,
@@ -620,14 +631,14 @@ class TaskExecutor:
             )
         )
         if self.union_exist:
-            e2 = ins_union.edges
+            e2 = a.instances["merge_union"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
         else:
             e2 = ins_tubelar.edges
             edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
 
         if self.pole_exist:
-            v1 = ins_union.vertices
+            v1 = a.instances["merge_union"].vertices
             vert1 = v1.getByBoundingBox(
                 0 + gap,
                 0 + gap,
@@ -712,7 +723,7 @@ class TaskExecutor:
         # ===设置相互作用: 钢管-混凝土(硬接触和摩擦)相互作用
         a = task_model.rootAssembly
         if self.union_exist:
-            s1 = ins_union.faces
+            s1 = a.instances["merge_union"].faces
             side2Faces1 = s1.getSequenceFromMask(
                 mask=("[#f ]",),
             )
@@ -744,7 +755,7 @@ class TaskExecutor:
         # ===设置内置区域约束: 钢筋, 混凝土
         if self.union_exist:
             a1 = task_model.rootAssembly
-            e1 = ins_union.edges
+            e1 = a.instances["merge_union"].edges
             edges1 = e1.getByBoundingCylinder(
                 center1=(x_len / 2.0, y_len / 2.0, 0),
                 center2=(x_len / 2.0, y_len / 2.0, z_len),
@@ -765,7 +776,7 @@ class TaskExecutor:
         # ===设置单元类型-桁架
         if self.union_exist:
             elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
-            p = task_model.parts["union"]  # TODO这个part什么时候创建的
+            p = task_model.parts["merge_union"]
             e = p.edges
             edges = e.getByBoundingCylinder(
                 center1=(x_len / 2.0, y_len / 2.0, 0),
@@ -776,7 +787,7 @@ class TaskExecutor:
             p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
         # ===划分网格: 钢材
         if self.union_exist:
-            p = task_model.parts["union"]  # TODO这个part什么时候创建的
+            p = task_model.parts["merge_union"]
         else:
             p = part_tubelar
         p.seedPart(
@@ -796,7 +807,7 @@ class TaskExecutor:
             )
 
         if self.union_exist:
-            p = task_model.parts["union"]
+            p = task_model.parts["merge_union"]
         else:
             p = part_tubelar
         p.generateMesh()
