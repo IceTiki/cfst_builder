@@ -16,8 +16,8 @@ import shutil
 import urllib2
 
 
-TASK_FOLDER = "C:\\Users\\Tiki_\\Desktop\\abaqus_exe\\tasks"
-GAP = 1  #  取一个小值, 用于几何选取函数等, 用于将选框向内缩一点
+ABAQUS_WORKDIR = os.path.abspath(os.getcwd())
+TASK_FOLDER = ".\\"
 
 
 class Path:
@@ -266,36 +266,37 @@ class TaskExecutor:
 
     @property
     def edge_point(self):
+        x_len, y_len, z_len = self.x_len, self.y_len, self.z_len
         return {
             "bottom_all": (
                 (self.x_len / 2.0, 0, 0),
-                (self.x_len / 2.0, self.y_len, 0),
-                (0, self.y_len / 2.0, 0),
-                (self.x_len, self.y_len / 2.0, 0),
+                (self.x_len / 2.0, y_len, 0),
+                (0, y_len / 2.0, 0),
+                (self.x_len, y_len / 2.0, 0),
             ),
             "top_all": (
-                (self.x_len / 2.0, 0, self.z_len),
-                (self.x_len / 2.0, self.y_len, self.z_len),
-                (0, self.y_len / 2.0, self.z_len),
-                (self.x_len, self.y_len / 2.0, self.z_len),
+                (self.x_len / 2.0, 0, z_len),
+                (self.x_len / 2.0, y_len, z_len),
+                (0, y_len / 2.0, z_len),
+                (self.x_len, y_len / 2.0, z_len),
             ),
             "x_all": (
                 (self.x_len / 2.0, 0, 0),
-                (self.x_len / 2.0, self.y_len, 0),
-                (self.x_len / 2.0, 0, self.z_len),
-                (self.x_len / 2.0, self.y_len, self.z_len),
+                (self.x_len / 2.0, y_len, 0),
+                (self.x_len / 2.0, 0, z_len),
+                (self.x_len / 2.0, y_len, z_len),
             ),
             "y_all": (
-                (0, self.y_len / 2.0, 0),
-                (self.x_len, self.y_len / 2.0, 0),
-                (0, self.y_len / 2.0, self.z_len),
-                (self.x_len, self.y_len / 2.0, self.z_len),
+                (0, y_len / 2.0, 0),
+                (self.x_len, y_len / 2.0, 0),
+                (0, y_len / 2.0, z_len),
+                (self.x_len, y_len / 2.0, z_len),
             ),
             "z_all": (
-                (self.x_len, 0, self.z_len / 2.0),
-                (0, self.y_len, self.z_len / 2.0),
-                (0, 0, self.z_len / 2.0),
-                (self.x_len, self.y_len, self.z_len / 2.0),
+                (self.x_len, 0, z_len / 2.0),
+                (0, y_len, z_len / 2.0),
+                (0, 0, z_len / 2.0),
+                (self.x_len, y_len, z_len / 2.0),
             ),
         }
 
@@ -316,93 +317,89 @@ class TaskExecutor:
         # session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
         #     referenceRepresentation=ON
         # )
+        # ===初始化常用变量
         Mdb()
-        
-        mdb.Model(name=self.modelname, modelType=STANDARD_EXPLICIT)
+        task_model = mdb.Model(name=self.modelname, modelType=STANDARD_EXPLICIT)
         del mdb.models["Model-1"]
+        x_len, y_len, z_len = self.x_len, self.y_len, self.z_len
 
         # ===部件-混凝土
-        s1 = mdb.models[self.modelname].ConstrainedSketch(
-            name="__profile__", sheetSize=10000.0
-        )
+        s1 = task_model.ConstrainedSketch(name="__profile__", sheetSize=10000.0)
         g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
         s1.setPrimaryObject(option=STANDALONE)
-        s1.rectangle(point1=(0.0, 0.0), point2=(self.x_len, self.y_len))
-        p = mdb.models[self.modelname].Part(
+        s1.rectangle(point1=(0.0, 0.0), point2=(x_len, y_len))
+        p = task_model.Part(
             name="concrete", dimensionality=THREE_D, type=DEFORMABLE_BODY
         )
-        p = mdb.models[self.modelname].parts["concrete"]
-        p.BaseSolidExtrude(sketch=s1, depth=self.z_len)
+        p = task_model.parts["concrete"]
+        p.BaseSolidExtrude(sketch=s1, depth=z_len)
         s1.unsetPrimaryObject()
-        p = mdb.models[self.modelname].parts["concrete"]
-        del mdb.models[self.modelname].sketches["__profile__"]
+        p = task_model.parts["concrete"]
+        del task_model.sketches["__profile__"]
 
         # ===部件-钢管
 
-        s = mdb.models[self.modelname].ConstrainedSketch(
-            name="__profile__", sheetSize=10000.0
-        )
+        s = task_model.ConstrainedSketch(name="__profile__", sheetSize=10000.0)
         g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
         s.setPrimaryObject(option=STANDALONE)
-        s.rectangle(point1=(0.0, 0.0), point2=(self.x_len, self.y_len))
-        p = mdb.models[self.modelname].Part(
+        s.rectangle(point1=(0.0, 0.0), point2=(x_len, y_len))
+        p = task_model.Part(
             name="tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
         )
-        p = mdb.models[self.modelname].parts["tubelar"]
-        p.BaseShellExtrude(sketch=s, depth=self.z_len)
+        p = task_model.parts["tubelar"]
+        p.BaseShellExtrude(sketch=s, depth=z_len)
         s.unsetPrimaryObject()
-        p = mdb.models[self.modelname].parts["tubelar"]
-        del mdb.models[self.modelname].sketches["__profile__"]
+        p = task_model.parts["tubelar"]
+        del task_model.sketches["__profile__"]
 
         # ===材料-钢
-        mdb.models[self.modelname].Material(name="steel_tube")
-        mdb.models[self.modelname].materials["steel_tube"].Elastic(
-            table=((206000.0, 0.25),)
+        task_model.Material(name="steel_tube")
+        task_model.materials["steel_tube"].Elastic(
+            table=((206000.0, 0.25),)  # TODO未被input.json控制的参数
         )
-        mdb.models[self.modelname].materials["steel_tube"].Plastic(
-            table=self.steel_plasticity_model
-        )
+        task_model.materials["steel_tube"].Plastic(table=self.steel_plasticity_model)
 
         # ===创建材料-混凝土
-        mdb.models[self.modelname].Material(name="concrete")
-        mdb.models[self.modelname].materials["concrete"].ConcreteDamagedPlasticity(
-            table=((40.0, 0.1, 1.16, 0.6667, 0.0005),)
+        task_model.Material(name="concrete")
+        task_model.materials["concrete"].ConcreteDamagedPlasticity(
+            table=((40.0, 0.1, 1.16, 0.6667, 0.0005),)  # TODO未被input.json控制的参数
         )
-        mdb.models[self.modelname].materials[
+        task_model.materials[
             "concrete"
         ].concreteDamagedPlasticity.ConcreteCompressionHardening(
-            table=self.concrete_plasticity_model
+            table=self.mtl_con_plast
         )
-        mdb.models[self.modelname].materials[
+        task_model.materials[
             "concrete"
         ].concreteDamagedPlasticity.ConcreteTensionStiffening(
-            table=self.concrete_gfi, type=GFI
+            table=self.mtl_con_gfi, type=GFI
         )
-        mdb.models[self.modelname].materials["concrete"].Elastic(
-            table=((self.concrete_elastic_modulus, 0.2),)
+        task_model.materials["concrete"].Elastic(
+            table=((self.mtl_con_elast_mod, 0.2),)  # TODO未被input.json控制的参数
         )
 
         # ===创建材料-拉杆
-        mdb.models[self.modelname].Material(name="material_steelbar")
-        mdb.models[self.modelname].materials["material_steelbar"].Elastic(
-            table=((200000.0, 0.25),)
+        task_model.Material(name="material_steelbar")
+        task_model.materials["material_steelbar"].Elastic(
+            table=((200000.0, 0.25),)  # TODO未被input.json控制的参数
         )
-        mdb.models[self.modelname].materials["material_steelbar"].Plastic(
+        task_model.materials["material_steelbar"].Plastic(
             table=self.steelbar_plasticity_model
         )
 
+        # TODO 独立控制pole的材料和截面
         # ===创建截面-混凝土
-        mdb.models[self.modelname].HomogeneousSolidSection(
+        task_model.HomogeneousSolidSection(
             name="concrete", material="concrete", thickness=None
         )
 
         # ===创建截面-钢管
-        mdb.models[self.modelname].HomogeneousShellSection(
+        task_model.HomogeneousShellSection(
             name="tubelar",
             preIntegrate=OFF,
             material="steel_tube",
             thicknessType=UNIFORM,
-            thickness=self.tube_thickness,
+            thickness=self.tubelar_thickness,
             thicknessField="",
             nodalThicknessField="",
             idealization=NO_IDEALIZATION,
@@ -415,10 +412,10 @@ class TaskExecutor:
         )
 
         # ===指派截面-混凝土
-        p = mdb.models[self.modelname].parts["concrete"]
+        p = task_model.parts["concrete"]
         c = p.cells
         region = regionToolset.Region(cells=p.cells)
-        p = mdb.models[self.modelname].parts["concrete"]
+        p = task_model.parts["concrete"]
         p.SectionAssignment(
             region=region,
             sectionName="concrete",
@@ -429,9 +426,9 @@ class TaskExecutor:
         )
 
         # ===指派截面-钢管
-        p = mdb.models[self.modelname].parts["tubelar"]
+        p = task_model.parts["tubelar"]
         region = regionToolset.Region(faces=p.faces)
-        p = mdb.models[self.modelname].parts["tubelar"]
+        p = task_model.parts["tubelar"]
         p.SectionAssignment(
             region=region,
             sectionName="tubelar",
@@ -442,91 +439,85 @@ class TaskExecutor:
         )
 
         # ===分析步
-        mdb.models[self.modelname].StaticStep(
+        task_model.StaticStep(
             name="Step-1",
             previous="Initial",
             maxNumInc=10000,
             initialInc=0.01,
             minInc=1e-07,
             nlgeom=ON,
-        )
-        mdb.models[self.modelname].steps["Step-1"].setValues(
+        )  # TODO未被input.json控制的参数
+        task_model.steps["Step-1"].setValues(
             stabilizationMethod=DISSIPATED_ENERGY_FRACTION,
             continueDampingFactors=True,
             adaptiveDampingRatio=0.05,
-        )
+        )  # TODO未被input.json控制的参数
 
         # ===装配
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
 
         # ===创建混凝土
         a.DatumCsysByDefault(CARTESIAN)
-        p = mdb.models[self.modelname].parts["concrete"]
+        p = task_model.parts["concrete"]
         a.Instance(name="concrete-1", part=p, dependent=ON)
 
         # ===创建钢管
-        p = mdb.models[self.modelname].parts["tubelar"]
+        p = task_model.parts["tubelar"]
         a.Instance(name="%s-1" % "tubelar", part=p, dependent=ON)
 
         # ===创建拉杆
         if self.rod_exist:
-            s1 = mdb.models[self.modelname].ConstrainedSketch(
-                name="__profile__", sheetSize=200.0
-            )
+            s1 = task_model.ConstrainedSketch(name="__profile__", sheetSize=200.0)
             g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
             s1.setPrimaryObject(option=STANDALONE)
-            for p1, p2 in self.pullroll["pattern_rod"]:
+            for p1, p2 in self.rod_pattern["pattern_rod"]:
                 p1, p2 = map(tuple, (p1, p2))
                 s1.Line(point1=p1, point2=p2)
 
-            p = mdb.models[self.modelname].Part(
+            p = task_model.Part(
                 name="rod_layer", dimensionality=THREE_D, type=DEFORMABLE_BODY
             )
-            p = mdb.models[self.modelname].parts["rod_layer"]
+            p = task_model.parts["rod_layer"]
             p.BaseWire(sketch=s1)
             s1.unsetPrimaryObject()
-            p = mdb.models[self.modelname].parts["rod_layer"]
-            del mdb.models[self.modelname].sketches["__profile__"]
+            p = task_model.parts["rod_layer"]
+            del task_model.sketches["__profile__"]
 
         # ===创建部件-中心立杆
-        s = mdb.models[self.modelname].ConstrainedSketch(
-            name="__profile__", sheetSize=200.0
-        )
+        s = task_model.ConstrainedSketch(name="__profile__", sheetSize=200.0)
         g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
         s.setPrimaryObject(option=STANDALONE)
         s.Line(
             point1=(0, 0),
-            point2=(self.z_len, 0),
+            point2=(z_len, 0),
         )
         s.HorizontalConstraint(entity=g[2], addUndoState=False)
-        p = mdb.models[self.modelname].Part(
-            name="pole", dimensionality=THREE_D, type=DEFORMABLE_BODY
-        )
-        p = mdb.models[self.modelname].parts["pole"]
+        p = task_model.Part(name="pole", dimensionality=THREE_D, type=DEFORMABLE_BODY)
+        p = task_model.parts["pole"]
         p.BaseWire(sketch=s)
         s.unsetPrimaryObject()
-        p = mdb.models[self.modelname].parts["pole"]
-        del mdb.models[self.modelname].sketches["__profile__"]
+        p = task_model.parts["pole"]
+        del task_model.sketches["__profile__"]
 
         # ===创建截面-拉杆
-        mdb.models[self.modelname].TrussSection(
+        task_model.TrussSection(
             name="sec_rod_layer",
             material="material_steelbar",
-            area=self.pullroll["area_rod"],
+            area=self.rod_pattern["area_rod"],
         )
 
         # ===创建截面-中心立杆
-        mdb.models[self.modelname].TrussSection(
+        task_model.TrussSection(
             name="pole",
             material="material_steelbar",
-            area=self.pullroll["area_pole"],
+            area=self.rod_pattern["area_pole"],
         )
 
         # ===指派截面-拉杆
         if self.rod_exist:
-            p = mdb.models[self.modelname].parts["rod_layer"]
+            p = task_model.parts["rod_layer"]
             region = regionToolset.Region(edges=p.edges)
-            p = mdb.models[self.modelname].parts["rod_layer"]
+            p = task_model.parts["rod_layer"]
             p.SectionAssignment(
                 region=region,
                 sectionName="sec_rod_layer",
@@ -537,9 +528,9 @@ class TaskExecutor:
             )
 
         # ===指派截面-中心立杆
-        p = mdb.models[self.modelname].parts["pole"]
+        p = task_model.parts["pole"]
         region = regionToolset.Region(edges=p.edges)
-        p = mdb.models[self.modelname].parts["pole"]
+        p = task_model.parts["pole"]
         p.SectionAssignment(
             region=region,
             sectionName="pole",
@@ -555,39 +546,39 @@ class TaskExecutor:
         self.item_rod_cage = tuple()
         if self.rod_exist:
             # ===创建实例
-            p = mdb.models[self.modelname].parts["rod_layer"]
+            p = task_model.parts["rod_layer"]
             ins = a.Instance(name="rod_layer-1", part=p, dependent=ON)
             self.item_rod_cage += (ins,)
             # ===平移实例
-            a1 = mdb.models[self.modelname].rootAssembly
+            a1 = task_model.rootAssembly
             a1.translate(
                 instanceList=("rod_layer-1",),
-                vector=[0, 0, self.pullroll["layer_spacing"]],
+                vector=[0, 0, self.rod_pattern["layer_spacing"]],
             )
             # ===线性阵列实例(z方向)
-            a1 = mdb.models[self.modelname].rootAssembly
+            a1 = task_model.rootAssembly
             self.item_rod_cage += a1.LinearInstancePattern(
                 instanceList=("rod_layer-1",),
                 direction1=(0.0, 0.0, 1.0),
                 direction2=(1.0, 0.0, 0.0),
-                number1=self.pullroll["number_layers"],
+                number1=self.rod_pattern["number_layers"],
                 number2=1,
-                spacing1=self.pullroll["layer_spacing"],
+                spacing1=self.rod_pattern["layer_spacing"],
                 spacing2=1.0,
             )
 
         # ===中心立杆
         self.item_poles = tuple()
         if self.pole_exist:
-            for i, pos in enumerate(self.pullroll["pattern_pole"]):
+            for i, pos in enumerate(self.rod_pattern["pattern_pole"]):
                 ins_name = "pole-%d" % (i + 1)
                 pos += [0]
                 # ===创建实例-中心立杆
-                a1 = mdb.models[self.modelname].rootAssembly
-                p = mdb.models[self.modelname].parts["pole"]
+                a1 = task_model.rootAssembly
+                p = task_model.parts["pole"]
                 a1.Instance(name=ins_name, part=p, dependent=ON)
                 # ===旋转实例-中心立杆
-                a1 = mdb.models[self.modelname].rootAssembly
+                a1 = task_model.rootAssembly
                 a1.rotate(
                     instanceList=(ins_name,),
                     axisPoint=(0, 0, 0),
@@ -595,7 +586,7 @@ class TaskExecutor:
                     angle=-90.0,
                 )
                 # ===平移实例-中心立杆
-                a1 = mdb.models[self.modelname].rootAssembly
+                a1 = task_model.rootAssembly
                 a1.translate(
                     instanceList=(ins_name,),
                     vector=tuple(pos),
@@ -603,8 +594,8 @@ class TaskExecutor:
                 self.item_poles += (a1.instances[ins_name],)
 
         # ===Merge实例-拉杆
-        if self.flag_union:
-            a1 = mdb.models[self.modelname].rootAssembly
+        if self.union_exist:
+            a1 = task_model.rootAssembly
             steel_union = (
                 (a1.instances["tubelar-1"],) + self.item_poles + self.item_rod_cage
             )
@@ -619,9 +610,9 @@ class TaskExecutor:
             )
 
         # ===创建参考点
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         feature_1 = a.ReferencePoint(point=self.referpoint_bottom)
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         feature_2 = a.ReferencePoint(point=self.referpoint_top)
         referpoint_bottom, referpoint_top = (
             a.referencePoints[feature_1.id],
@@ -629,15 +620,15 @@ class TaskExecutor:
         )
 
         # ===创建底面刚体
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
 
         f1 = a.instances["concrete-1"].faces
         faces1 = f1.findAt(
             coordinates=tuple(
-                [(self.x_len / 2.0, self.y_len / 2.0, 0)],
+                [(x_len / 2.0, y_len / 2.0, 0)],
             )
         )
-        if self.flag_union:
+        if self.union_exist:
             e2 = a.instances["union-1"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
         else:
@@ -650,32 +641,32 @@ class TaskExecutor:
                 0 + self.gap,
                 0 + self.gap,
                 0 - self.gap,
-                self.x_len - self.gap,
-                self.y_len - self.gap,
+                x_len - self.gap,
+                y_len - self.gap,
                 0 + self.gap,
             )
             region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
         else:
             region4 = regionToolset.Region(edges=edges2, faces=faces1)
 
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         r1 = a.referencePoints
 
         refPoints1 = (referpoint_bottom,)
         region1 = regionToolset.Region(referencePoints=refPoints1)
-        mdb.models[self.modelname].RigidBody(
+        task_model.RigidBody(
             name="ct_bottom", refPointRegion=region1, tieRegion=region4
         )
 
         # ===创建顶面刚体
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         f1 = a.instances["concrete-1"].faces
         faces1 = f1.findAt(
             coordinates=tuple(
-                [(self.x_len / 2.0, self.y_len / 2.0, self.z_len)],
+                [(x_len / 2.0, y_len / 2.0, z_len)],
             )
         )
-        if self.flag_union:
+        if self.union_exist:
             e2 = a.instances["union-1"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
         else:
@@ -687,29 +678,27 @@ class TaskExecutor:
             vert1 = v1.getByBoundingBox(
                 0 + self.gap,
                 0 + self.gap,
-                self.z_len - self.gap,
-                self.x_len - self.gap,
-                self.y_len - self.gap,
-                self.z_len + self.gap,
+                z_len - self.gap,
+                x_len - self.gap,
+                y_len - self.gap,
+                z_len + self.gap,
             )
             region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
         else:
             region4 = regionToolset.Region(edges=edges2, faces=faces1)
 
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         r1 = a.referencePoints
         refPoints1 = (referpoint_top,)
         region1 = regionToolset.Region(referencePoints=refPoints1)
-        mdb.models[self.modelname].RigidBody(
-            name="cp_top", refPointRegion=region1, tieRegion=region4
-        )
+        task_model.RigidBody(name="cp_top", refPointRegion=region1, tieRegion=region4)
 
         # ===边界条件-底部
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         r1 = a.referencePoints
         refPoints1 = (referpoint_bottom,)
         region = regionToolset.Region(referencePoints=refPoints1)
-        mdb.models[self.modelname].DisplacementBC(
+        task_model.DisplacementBC(
             name="bound_bottom",
             createStepName="Step-1",
             region=region,
@@ -732,11 +721,11 @@ class TaskExecutor:
         # )
 
         # ===边界条件-顶部
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         r1 = a.referencePoints
         refPoints1 = (referpoint_top,)
         region = regionToolset.Region(referencePoints=refPoints1)
-        mdb.models[self.modelname].DisplacementBC(
+        task_model.DisplacementBC(
             name="bound_top",
             createStepName="Step-1",
             region=region,
@@ -754,10 +743,8 @@ class TaskExecutor:
         )
 
         # ===创建相互作用属性-钢管-混凝土(硬接触和摩擦)
-        mdb.models[self.modelname].ContactProperty("tube-concrete")
-        mdb.models[self.modelname].interactionProperties[
-            "tube-concrete"
-        ].TangentialBehavior(
+        task_model.ContactProperty("tube-concrete")
+        task_model.interactionProperties["tube-concrete"].TangentialBehavior(
             formulation=PENALTY,
             directionality=ISOTROPIC,
             slipRateDependency=OFF,
@@ -770,17 +757,15 @@ class TaskExecutor:
             fraction=0.005,
             elasticSlipStiffness=None,
         )
-        mdb.models[self.modelname].interactionProperties[
-            "tube-concrete"
-        ].NormalBehavior(
+        task_model.interactionProperties["tube-concrete"].NormalBehavior(
             pressureOverclosure=HARD,
             allowSeparation=ON,
             constraintEnforcementMethod=DEFAULT,
         )
 
         # ===创建相互作用-钢管-混凝土
-        a = mdb.models[self.modelname].rootAssembly
-        if self.flag_union:
+        a = task_model.rootAssembly
+        if self.union_exist:
             s1 = a.instances["union-1"].faces
             side2Faces1 = s1.getSequenceFromMask(
                 mask=("[#f ]",),
@@ -791,13 +776,13 @@ class TaskExecutor:
                 mask=("[#f ]",),
             )
         region1 = regionToolset.Region(side2Faces=side2Faces1)
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         s1 = a.instances["concrete-1"].faces
         side1Faces1 = s1.getSequenceFromMask(
             mask=("[#f ]",),
         )
         region2 = regionToolset.Region(side1Faces=side1Faces1)
-        mdb.models[self.modelname].SurfaceToSurfaceContactStd(
+        task_model.SurfaceToSurfaceContactStd(
             name="steel-concrete",
             createStepName="Step-1",
             master=region1,
@@ -812,17 +797,16 @@ class TaskExecutor:
         )
 
         # ===相互作用-钢筋-混凝土
-        if self.flag_union:
-            a1 = mdb.models[self.modelname].rootAssembly
+        if self.union_exist:
+            a1 = task_model.rootAssembly
             e1 = a1.instances["union-1"].edges
             edges1 = e1.getByBoundingCylinder(
-                center1=(self.x_len / 2.0, self.y_len / 2.0, 0),
-                center2=(self.x_len / 2.0, self.y_len / 2.0, self.z_len),
-                radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
-                - self.gap,
+                center1=(x_len / 2.0, y_len / 2.0, 0),
+                center2=(x_len / 2.0, y_len / 2.0, z_len),
+                radius=math.sqrt(x_len * x_len + y_len * y_len) - self.gap,
             )
             region1 = regionToolset.Region(edges=edges1)
-            mdb.models[self.modelname].EmbeddedRegion(
+            task_model.EmbeddedRegion(
                 name="roll-concrete",
                 embeddedRegion=region1,
                 hostRegion=None,
@@ -833,25 +817,26 @@ class TaskExecutor:
             )
 
         # ===单元类型-桁架
-        if self.flag_union:
+        if self.union_exist:
             elemType1 = mesh.ElemType(elemCode=T3D2, elemLibrary=STANDARD)
-            p = mdb.models[self.modelname].parts["union"]
+            p = task_model.parts["union"]
             e = p.edges
             edges = e.getByBoundingCylinder(
-                center1=(self.x_len / 2.0, self.y_len / 2.0, 0),
-                center2=(self.x_len / 2.0, self.y_len / 2.0, self.z_len),
-                radius=math.sqrt(self.x_len * self.x_len + self.y_len * self.y_len)
-                - self.gap,
+                center1=(x_len / 2.0, y_len / 2.0, 0),
+                center2=(x_len / 2.0, y_len / 2.0, z_len),
+                radius=math.sqrt(x_len * x_len + y_len * y_len) - self.gap,
             )
             pickedRegions = (edges,)
             p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
         # ===划分网格-steel
-        if self.flag_union:
-            p = mdb.models[self.modelname].parts["union"]
+        if self.union_exist:
+            p = task_model.parts["union"]
         else:
-            p = mdb.models[self.modelname].parts["tubelar"]
+            p = task_model.parts["tubelar"]
         p.seedPart(
-            size=max(self.x_len, self.y_len), deviationFactor=0.1, minSizeFactor=0.1
+            size=max(x_len, y_len),
+            deviationFactor=self.grid_minsize,
+            minSizeFactor=self.grid_minsize,
         )
         e = p.edges
         for i, j in zip(["x_all", "y_all", "z_all"], [0, 1, 2]):
@@ -859,40 +844,40 @@ class TaskExecutor:
             p.seedEdgeBySize(
                 edges=pickedEdges,
                 size=self.steel_seed[j],
-                deviationFactor=0.1,
-                minSizeFactor=0.1,
+                deviationFactor=self.grid_minsize,
+                minSizeFactor=self.grid_minsize,
                 constraint=FINER,
             )
 
-        if self.flag_union:
-            p = mdb.models[self.modelname].parts["union"]
+        if self.union_exist:
+            p = task_model.parts["union"]
         else:
-            p = mdb.models[self.modelname].parts["tubelar"]
+            p = task_model.parts["tubelar"]
         p.generateMesh()
         # ===划分网格-concrete
-        p = mdb.models[self.modelname].parts["concrete"]
+        p = task_model.parts["concrete"]
         e = p.edges
         for i, j in zip(["x_all", "y_all", "z_all"], [0, 1, 2]):
             pickedEdges = e.findAt(coordinates=self.edge_point[i])
             p.seedEdgeBySize(
                 edges=pickedEdges,
                 size=self.concrete_seed[j],
-                deviationFactor=0.1,
-                minSizeFactor=0.1,
+                deviationFactor=self.grid_minsize,
+                minSizeFactor=self.grid_minsize,
                 constraint=FINER,
             )
-        p = mdb.models[self.modelname].parts["concrete"]
+        p = task_model.parts["concrete"]
         p.generateMesh()
 
         # ===创建集
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         r1 = a.referencePoints
         refPoints1 = (referpoint_top,)
         a.Set(referencePoints=refPoints1, name="RP-TOP")
 
         # ===历程输出
-        regionDef = mdb.models[self.modelname].rootAssembly.sets["RP-TOP"]
-        mdb.models[self.modelname].HistoryOutputRequest(
+        regionDef = task_model.rootAssembly.sets["RP-TOP"]
+        task_model.HistoryOutputRequest(
             name="TOP-OUTPUT",
             createStepName="Step-1",
             variables=(
@@ -914,10 +899,11 @@ class TaskExecutor:
             rebar=EXCLUDE,
         )
 
+        # TODOCPU和GPU调用适配
         # ===生成作业
         mdb.Job(
             name=self.jobname,
-            model=self.modelname,
+            model=USER_MODELNAME,
             description="",
             type=ANALYSIS,
             atTime=None,
@@ -942,12 +928,13 @@ class TaskExecutor:
             numGPUs=1,
         )
         # ===保存
+        mdb.save()
         mdb.saveAs(pathName=self.caepath)
 
         # ===切换窗口
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         a.regenerate()
-        a = mdb.models[self.modelname].rootAssembly
+        a = task_model.rootAssembly
         session.viewports["Viewport: 1"].setValues(displayedObject=a)
         session.viewports["Viewport: 1"].assemblyDisplay.setValues(
             optimizationTasks=OFF, geometricRestrictions=OFF, stopConditions=OFF
@@ -962,7 +949,7 @@ class TaskExecutor:
 
                 line = 5
                 job_running = True
-                stafile = self.work_stafile
+                stafile = self.workdir_statusfile
                 # ===输出status
                 status_output = 30
                 while not os.path.isfile(stafile) and status_output:
@@ -996,7 +983,7 @@ class TaskExecutor:
                 mdb.jobs[self.jobname].kill()
 
             try:
-                odbpath = self.work_odbpath
+                odbpath = self.workdir_odb
                 odb = session.openOdb(name=odbpath)
 
                 # ===保存应力应变曲线
@@ -1019,7 +1006,7 @@ class TaskExecutor:
                     "load": [-i[1] for i in xy0],
                     "load_k": [-i[1] / 1000.0 for i in xy0],
                     "displacement": xy1,
-                    "epsilon": [-i[1] / float(self.z_len) for i in xy1],
+                    "epsilon": [-i[1] / float(z_len) for i in xy1],
                     "time": [i[0] for i in xy0],
                 }
 
@@ -1094,7 +1081,7 @@ while 1:
         break
     print("task:", json_path)
 
-    taskparams = Utils.load_json(json_path)
-    TaskHandler(taskparams).run()
+    taskparams = Utils.load_json(json_path)["task_params"]
+    TaskExecutor(taskparams).run()
 
     i += 1
