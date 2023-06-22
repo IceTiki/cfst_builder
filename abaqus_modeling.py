@@ -324,81 +324,72 @@ class TaskExecutor:
         x_len, y_len, z_len = self.x_len, self.y_len, self.z_len
         gap = self.gap
 
-        # ===部件-混凝土
+        # ======创建部件======
+        # ===混凝土
         s1 = task_model.ConstrainedSketch(name="__profile__", sheetSize=10000.0)
         g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
         s1.setPrimaryObject(option=STANDALONE)
         s1.rectangle(point1=(0.0, 0.0), point2=(x_len, y_len))
-        p = task_model.Part(
-            name="concrete", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        part_concrete = task_model.Part(
+            name="part_concrete", dimensionality=THREE_D, type=DEFORMABLE_BODY
         )
-        p = task_model.parts["concrete"]
-        p.BaseSolidExtrude(sketch=s1, depth=z_len)
+        part_concrete.BaseSolidExtrude(sketch=s1, depth=z_len)
         s1.unsetPrimaryObject()
-        p = task_model.parts["concrete"]
-        del task_model.sketches["__profile__"]
-
-        # ===部件-钢管
-
+        # ===钢管
         s = task_model.ConstrainedSketch(name="__profile__", sheetSize=10000.0)
         g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
         s.setPrimaryObject(option=STANDALONE)
         s.rectangle(point1=(0.0, 0.0), point2=(x_len, y_len))
-        p = task_model.Part(
-            name="tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
+        part_tubelar = task_model.Part(
+            name="part_tubelar", dimensionality=THREE_D, type=DEFORMABLE_BODY
         )
-        p = task_model.parts["tubelar"]
-        p.BaseShellExtrude(sketch=s, depth=z_len)
+        part_tubelar.BaseShellExtrude(sketch=s, depth=z_len)
         s.unsetPrimaryObject()
-        p = task_model.parts["tubelar"]
         del task_model.sketches["__profile__"]
 
-        # ===材料-钢
-        task_model.Material(name="steel_tube")
-        task_model.materials["steel_tube"].Elastic(
-            table=((206000.0, 0.25),)  # TODO未被input.json控制的参数
-        )
-        task_model.materials["steel_tube"].Plastic(table=self.steel_plasticity_model)
+        # ======创建材料======
+        # ===材料-钢管
+        mtl_tubelar = task_model.Material(name="mtl_tubelar")
+        mtl_tubelar.Elastic(table=((206000.0, 0.25),))  # TODO未被input.json控制的参数
+        mtl_tubelar.Plastic(table=self.steel_plasticity_model)
 
-        # ===创建材料-混凝土
-        task_model.Material(name="concrete")
-        task_model.materials["concrete"].ConcreteDamagedPlasticity(
+        # ===材料-混凝土
+        mtl_concrete = task_model.Material(name="mtl_concrete")
+        mtl_concrete.ConcreteDamagedPlasticity(
             table=((40.0, 0.1, 1.16, 0.6667, 0.0005),)  # TODO未被input.json控制的参数
         )
-        task_model.materials[
-            "concrete"
-        ].concreteDamagedPlasticity.ConcreteCompressionHardening(
+        mtl_concrete.concreteDamagedPlasticity.ConcreteCompressionHardening(
             table=self.mtl_con_plast
         )
-        task_model.materials[
-            "concrete"
-        ].concreteDamagedPlasticity.ConcreteTensionStiffening(
+        mtl_concrete.concreteDamagedPlasticity.ConcreteTensionStiffening(
             table=self.mtl_con_gfi, type=GFI
         )
-        task_model.materials["concrete"].Elastic(
+        mtl_concrete.Elastic(
             table=((self.mtl_con_elast_mod, 0.2),)  # TODO未被input.json控制的参数
         )
 
-        # ===创建材料-拉杆
-        task_model.Material(name="material_steelbar")
-        task_model.materials["material_steelbar"].Elastic(
-            table=((200000.0, 0.25),)  # TODO未被input.json控制的参数
-        )
-        task_model.materials["material_steelbar"].Plastic(
-            table=self.steelbar_plasticity_model
-        )
+        # ===材料-约束拉杆
+        mtl_rod = task_model.Material(name="mtl_rod")
+        mtl_rod.Elastic(table=((200000.0, 0.25),))  # TODO未被input.json控制的参数
+        mtl_rod.Plastic(table=self.steelbar_plasticity_model)
+
+        # ===材料-中心立杆
+        mtl_pole = task_model.Material(name="mtl_pole")
+        mtl_pole.Elastic(table=((200000.0, 0.25),))  # TODO未被input.json控制的参数
+        mtl_pole.Plastic(table=self.steelbar_plasticity_model)
 
         # TODO 独立控制pole的材料和截面
-        # ===创建截面-混凝土
-        task_model.HomogeneousSolidSection(
-            name="concrete", material="concrete", thickness=None
-        )
 
-        # ===创建截面-钢管
-        task_model.HomogeneousShellSection(
-            name="tubelar",
+        # ======创建截面======
+        # ===混凝土
+        sec_concrete = task_model.HomogeneousSolidSection(
+            name="sec_concrete", material="mtl_concrete", thickness=None
+        )
+        # ===钢管
+        sec_tubelar = task_model.HomogeneousShellSection(
+            name="sec_tubelar",
             preIntegrate=OFF,
-            material="steel_tube",
+            material="mtl_tubelar",
             thicknessType=UNIFORM,
             thickness=self.tubelar_thickness,
             thicknessField="",
@@ -412,34 +403,29 @@ class TaskExecutor:
             numIntPts=9,
         )
 
-        # ===指派截面-混凝土
-        p = task_model.parts["concrete"]
-        c = p.cells
-        region = regionToolset.Region(cells=p.cells)
-        p = task_model.parts["concrete"]
-        p.SectionAssignment(
+        # ======指派截面======
+        # ===混凝土
+        region = regionToolset.Region(cells=part_concrete.cells)
+        part_concrete.SectionAssignment(
             region=region,
-            sectionName="concrete",
+            sectionName="sec_concrete",
             offset=0.0,
             offsetType=MIDDLE_SURFACE,
             offsetField="",
             thicknessAssignment=FROM_SECTION,
         )
-
-        # ===指派截面-钢管
-        p = task_model.parts["tubelar"]
-        region = regionToolset.Region(faces=p.faces)
-        p = task_model.parts["tubelar"]
-        p.SectionAssignment(
+        # ===钢管
+        region = regionToolset.Region(faces=part_tubelar.faces)
+        part_tubelar.SectionAssignment(
             region=region,
-            sectionName="tubelar",
+            sectionName="sec_tubelar",
             offset=0.0,
             offsetType=BOTTOM_SURFACE,
             offsetField="",
             thicknessAssignment=FROM_SECTION,
         )
 
-        # ===分析步
+        # ======创建分析步======
         task_model.StaticStep(
             name="Step-1",
             previous="Initial",
@@ -454,19 +440,14 @@ class TaskExecutor:
             adaptiveDampingRatio=0.05,
         )  # TODO未被input.json控制的参数
 
-        # ===装配
+        # ======装配=======
         a = task_model.rootAssembly
-
-        # ===创建混凝土
+        # ===混凝土
         a.DatumCsysByDefault(CARTESIAN)
-        p = task_model.parts["concrete"]
-        a.Instance(name="concrete-1", part=p, dependent=ON)
-
-        # ===创建钢管
-        p = task_model.parts["tubelar"]
-        a.Instance(name="%s-1" % "tubelar", part=p, dependent=ON)
-
-        # ===创建拉杆
+        ins_concrete = a.Instance(name="ins_concrete", part=part_concrete, dependent=ON)
+        # ===钢管
+        ins_tubelar = a.Instance(name="ins_tubelar", part=part_tubelar, dependent=ON)
+        # ===拉杆
         if self.rod_exist:
             s1 = task_model.ConstrainedSketch(name="__profile__", sheetSize=200.0)
             g, v, d, c = s1.geometry, s1.vertices, s1.dimensions, s1.constraints
@@ -483,8 +464,7 @@ class TaskExecutor:
             s1.unsetPrimaryObject()
             p = task_model.parts["rod_layer"]
             del task_model.sketches["__profile__"]
-
-        # ===创建部件-中心立杆
+        # ===中心立杆
         s = task_model.ConstrainedSketch(name="__profile__", sheetSize=200.0)
         g, v, d, c = s.geometry, s.vertices, s.dimensions, s.constraints
         s.setPrimaryObject(option=STANDALONE)
@@ -503,14 +483,14 @@ class TaskExecutor:
         # ===创建截面-拉杆
         task_model.TrussSection(
             name="sec_rod_layer",
-            material="material_steelbar",
+            material="mtl_rod",
             area=self.rod_pattern["area_rod"],
         )
 
         # ===创建截面-中心立杆
         task_model.TrussSection(
             name="pole",
-            material="material_steelbar",
+            material="mtl_rod",
             area=self.rod_pattern["area_pole"],
         )
 
