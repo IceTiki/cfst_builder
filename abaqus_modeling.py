@@ -127,9 +127,7 @@ class TaskExecutor:
     def __init__(self, taskparams, workdir="./"):
         self.taskparams = taskparams
         self.workdir = workdir
-        self.load_task_params()
 
-    def load_task_params(self):
         params = self.taskparams
         # ===一级释放
         (
@@ -170,7 +168,7 @@ class TaskExecutor:
                     mtl_concrete_params["sigma"], mtl_concrete_params["epsilon"]
                 )
             ),
-            "gfi": (
+            "gfi_table": (
                 mtl_concrete_params["strength_fracture"],
                 mtl_concrete_params["gfi"],
             ),
@@ -215,13 +213,14 @@ class TaskExecutor:
         self.referpoint_top = {
             "position": referpoint["top"]["position"],
             "displacement": tuple(
-                (UNSET if i is None else i) for i in referpoint["top"]["position"]
+                (UNSET if i is None else i) for i in referpoint["top"]["displacement"]
             ),
         }
         self.referpoint_bottom = {
             "position": referpoint["bottom"]["position"],
             "displacement": tuple(
-                (UNSET if i is None else i) for i in referpoint["bottom"]["position"]
+                (UNSET if i is None else i)
+                for i in referpoint["bottom"]["displacement"]
             ),
         }
 
@@ -264,14 +263,16 @@ class TaskExecutor:
         }
         static_step_params = self.misc["static_step"]
         self.static_step = {
-            "maxNumInc": static_step_params["maxNumInc"],
-            "initialInc": static_step_params["initialInc"],
-            "minInc": static_step_params["minInc"],
-            "nlgeom": static_step_params["nlgeom"],
-            "stabilization_method": static_step_params["stabilization_method"],
-            "continue_damping_factors": SymbolicConstant(
-                static_step_params["continue_damping_factors"]
+            "max_num_inc": static_step_params["max_num_inc"],
+            "initial_inc": static_step_params["initial_inc"],
+            "min_inc": static_step_params["min_inc"],
+            "nlgeom": SymbolicConstant(
+                str(static_step_params["nlgeom"])
+            ),  # SymbolicConstant可能仅支持str不支持unicode
+            "stabilization_method": SymbolicConstant(
+                str(static_step_params["stabilization_method"])
             ),
+            "continue_damping_factors": static_step_params["continue_damping_factors"],
             "adaptive_damping_ratio": static_step_params["adaptive_damping_ratio"],
         }
 
@@ -315,19 +316,6 @@ class TaskExecutor:
         # ===abaqus初始化
         print("SCIIPT> task running at: ", self.caepath)
         print("SCIIPT> model name is: ", self.modelname)
-        # session.Viewport(
-        #     name="Viewport: 1",
-        #     origin=(0.0, 0.0),
-        #     width=117.13020324707,
-        #     height=100.143524169922,
-        # )
-        # session.viewports["Viewport: 1"].makeCurrent()
-        # session.viewports["Viewport: 1"].maximize()
-
-        # executeOnCaeStartup()
-        # session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
-        #     referenceRepresentation=ON
-        # )
         # ===初始化常用变量
         Mdb()
         task_model = mdb.Model(name=self.modelname, modelType=STANDARD_EXPLICIT)
@@ -392,35 +380,44 @@ class TaskExecutor:
         # ======创建材料======
         # ===材料-钢管
         mtl_tubelar = task_model.Material(name="mtl_tubelar")
-        mtl_tubelar.Elastic(table=((206000.0, 0.25),))  # TODO未被input.json控制的参数
-        mtl_tubelar.Plastic(table=self.steel_plasticity_model)
-
+        mtl_tubelar.Elastic(
+            table=(
+                (
+                    self.mtl_tubelar["elastic_modulus"],
+                    self.mtl_tubelar["poissons_ratio"],
+                ),
+            )
+        )
+        mtl_tubelar.Plastic(table=self.mtl_tubelar["plastic_model"])
         # ===材料-混凝土
         mtl_concrete = task_model.Material(name="mtl_concrete")
-        mtl_concrete.ConcreteDamagedPlasticity(
-            table=((40.0, 0.1, 1.16, 0.6667, 0.0005),)  # TODO未被input.json控制的参数
-        )
+        mtl_concrete.ConcreteDamagedPlasticity(table=(self.mtl_concrete["cdp_params"],))
         mtl_concrete.concreteDamagedPlasticity.ConcreteCompressionHardening(
-            table=self.mtl_con_plast
+            table=self.mtl_concrete["plastic_model"]
         )
         mtl_concrete.concreteDamagedPlasticity.ConcreteTensionStiffening(
-            table=self.mtl_con_gfi, type=GFI
+            table=(self.mtl_concrete["gfi_table"],), type=GFI
         )
         mtl_concrete.Elastic(
-            table=((self.mtl_con_elast_mod, 0.2),)  # TODO未被input.json控制的参数
+            table=(
+                (
+                    self.mtl_concrete["elastic_modulus"],
+                    self.mtl_concrete["poissons_ratio"],
+                ),
+            )
         )
-
         # ===材料-约束拉杆
         mtl_rod = task_model.Material(name="mtl_rod")
-        mtl_rod.Elastic(table=((200000.0, 0.25),))  # TODO未被input.json控制的参数
-        mtl_rod.Plastic(table=self.steelbar_plasticity_model)
-
+        mtl_rod.Elastic(
+            table=((self.mtl_rod["elastic_modulus"], self.mtl_rod["poissons_ratio"]),)
+        )
+        mtl_rod.Plastic(table=self.mtl_rod["plastic_model"])
         # ===材料-中心立杆
         mtl_pole = task_model.Material(name="mtl_pole")
-        mtl_pole.Elastic(table=((200000.0, 0.25),))  # TODO未被input.json控制的参数
-        mtl_pole.Plastic(table=self.steelbar_plasticity_model)
-
-        # TODO 独立控制pole的材料和截面
+        mtl_pole.Elastic(
+            table=((self.mtl_pole["elastic_modulus"], self.mtl_pole["poissons_ratio"]),)
+        )
+        mtl_pole.Plastic(table=self.mtl_pole["plastic_model"])
 
         # ======创建截面======
         # ===混凝土
@@ -442,7 +439,7 @@ class TaskExecutor:
             temperature=GRADIENT,
             useDensity=OFF,
             integrationRule=SIMPSON,
-            numIntPts=9,
+            numIntPts=self.misc["tubelar_num_int_pts"],
         )
         # ===创建截面-拉杆
         sec_rod_layer = task_model.TrussSection(
@@ -574,12 +571,38 @@ class TaskExecutor:
                 domain=BOTH,
             )  # 这一步会同时在part和instance里面创建merge_union(在part中创建的会去掉"-数字"后缀)
 
+        # ======创建分析步======
+        # task_model.StaticStep(
+        #     name="Step-1",
+        #     previous="Initial",
+        #     maxNumInc=10000,
+        #     initialInc=0.01,
+        #     minInc=1e-07,
+        #     nlgeom=ON,
+        # )  # TODO未被input.json控制的参数
+        # task_model.steps["Step-1"].setValues(
+        #     stabilizationMethod=DISSIPATED_ENERGY_FRACTION,
+        #     continueDampingFactors=True,
+        #     adaptiveDampingRatio=0.05,
+        # )  # TODO未被input.json控制的参数
+        task_model.StaticStep(
+            name="Step-1",
+            previous="Initial",
+            maxNumInc=self.static_step["max_num_inc"],
+            initialInc=self.static_step["initial_inc"],
+            minInc=self.static_step["min_inc"],
+            nlgeom=self.static_step["nlgeom"],
+            stabilizationMethod=self.static_step["stabilization_method"],
+            continueDampingFactors=self.static_step["continue_damping_factors"],
+            adaptiveDampingRatio=self.static_step["adaptive_damping_ratio"],
+        )
+
         # ======相互作用======
         # ===设置参考点
         a = task_model.rootAssembly
-        feature_1 = a.ReferencePoint(point=self.referpoint_bottom)
+        feature_1 = a.ReferencePoint(self.referpoint_bottom["position"])
         a = task_model.rootAssembly
-        feature_2 = a.ReferencePoint(point=self.referpoint_top)
+        feature_2 = a.ReferencePoint(self.referpoint_top["position"])
         referpoint_bottom, referpoint_top = (
             a.referencePoints[feature_1.id],
             a.referencePoints[feature_2.id],
@@ -587,7 +610,7 @@ class TaskExecutor:
         # ===设置刚体约束: 底面
         a = task_model.rootAssembly
 
-        f1 = a.instances["concrete-1"].faces
+        f1 = ins_concrete.faces
         faces1 = f1.findAt(
             coordinates=tuple(
                 [(x_len / 2.0, y_len / 2.0, 0)],
@@ -597,7 +620,7 @@ class TaskExecutor:
             e2 = a.instances["merge_union"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
         else:
-            e2 = a.instances["tubelar-1"].edges
+            e2 = ins_tubelar.edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
 
         if self.pole_exist:
@@ -624,7 +647,7 @@ class TaskExecutor:
         )
         # ===设置刚体约束: 顶面
         a = task_model.rootAssembly
-        f1 = a.instances["concrete-1"].faces
+        f1 = ins_concrete.faces
         faces1 = f1.findAt(
             coordinates=tuple(
                 [(x_len / 2.0, y_len / 2.0, z_len)],
@@ -661,16 +684,17 @@ class TaskExecutor:
         r1 = a.referencePoints
         refPoints1 = (referpoint_bottom,)
         region = regionToolset.Region(referencePoints=refPoints1)
+        displacement_bottom = self.referpoint_bottom["displacement"]
         task_model.DisplacementBC(
             name="bound_bottom",
             createStepName="Step-1",
             region=region,
-            u1=self.displacement_bottom[0],
-            u2=self.displacement_bottom[1],
-            u3=self.displacement_bottom[2],
-            ur1=self.displacement_bottom[3],
-            ur2=self.displacement_bottom[4],
-            ur3=self.displacement_bottom[5],
+            u1=displacement_bottom[0],
+            u2=displacement_bottom[1],
+            u3=displacement_bottom[2],
+            ur1=displacement_bottom[3],
+            ur2=displacement_bottom[4],
+            ur3=displacement_bottom[5],
             amplitude=UNSET,
             fixed=OFF,
             distributionType=UNIFORM,
@@ -682,16 +706,17 @@ class TaskExecutor:
         r1 = a.referencePoints
         refPoints1 = (referpoint_top,)
         region = regionToolset.Region(referencePoints=refPoints1)
+        displacement_top = self.referpoint_top["displacement"]
         task_model.DisplacementBC(
             name="bound_top",
             createStepName="Step-1",
             region=region,
-            u1=self.displacement_top[0],
-            u2=self.displacement_top[1],
-            u3=self.displacement_top[2],
-            ur1=self.displacement_top[3],
-            ur2=self.displacement_top[4],
-            ur3=self.displacement_top[5],
+            u1=displacement_top[0],
+            u2=displacement_top[1],
+            u3=displacement_top[2],
+            ur1=displacement_top[3],
+            ur2=displacement_top[4],
+            ur3=displacement_top[5],
             amplitude=UNSET,
             fixed=OFF,
             distributionType=UNIFORM,
@@ -709,7 +734,7 @@ class TaskExecutor:
             pressureDependency=OFF,
             temperatureDependency=OFF,
             dependencies=0,
-            table=((0.6,),),
+            table=((self.misc["friction_factor_between_concrete_tubelar"],),),
             shearStressLimit=None,
             maximumElasticSlip=FRACTION,
             fraction=0.005,
@@ -824,21 +849,6 @@ class TaskExecutor:
             )
         part_concrete.generateMesh()
 
-        # ======创建分析步======
-        task_model.StaticStep(
-            name="Step-1",
-            previous="Initial",
-            maxNumInc=10000,
-            initialInc=0.01,
-            minInc=1e-07,
-            nlgeom=ON,
-        )  # TODO未被input.json控制的参数
-        task_model.steps["Step-1"].setValues(
-            stabilizationMethod=DISSIPATED_ENERGY_FRACTION,
-            continueDampingFactors=True,
-            adaptiveDampingRatio=0.05,
-        )  # TODO未被input.json控制的参数
-
         # ======历程输出======
         # ===创建集
         a = task_model.rootAssembly
@@ -869,18 +879,17 @@ class TaskExecutor:
             rebar=EXCLUDE,
         )
 
-        # TODOCPU和GPU调用适配
         # ======生成作业======
         mdb.Job(
             name=self.jobname,
-            model=USER_MODELNAME,
+            model=self.modelname,
             description="",
             type=ANALYSIS,
             atTime=None,
             waitMinutes=0,
             waitHours=0,
             queue=None,
-            memory=90,
+            memory=self.performance["memory"],
             memoryUnits=PERCENTAGE,
             getMemoryFromAnalysis=True,
             explicitPrecision=SINGLE,
@@ -893,12 +902,11 @@ class TaskExecutor:
             scratch="",
             resultsFormat=ODB,
             multiprocessingMode=DEFAULT,
-            numCpus=6,
-            numDomains=6,
-            numGPUs=1,
+            numCpus=self.performance["num_cpus"],
+            numDomains=self.performance["num_cpus"],
+            numGPUs=self.performance["num_gpus"],
         )
         # ======保存======
-        mdb.save()
         mdb.saveAs(pathName=self.caepath)
 
         # ======提交======
@@ -1019,30 +1027,32 @@ class TaskExecutor:
                 traceback.print_exc()
 
 
-control_json_path = os.path.join(TASK_FOLDER, "control.json")
-control_json = Utils.load_json(control_json_path)
+taskparams = Utils.load_json("C:\\Users\\Tiki_\\Desktop\\tmp.json")["task_params"]
+TaskExecutor(taskparams).run()
+# control_json_path = os.path.join(TASK_FOLDER, "control.json")
+# control_json = Utils.load_json(control_json_path)
 
 
-i = control_json["start_at"]
+# i = control_json["start_at"]
 
-while 1:
-    control_json = Utils.load_json(control_json_path)
-    flag = control_json["flag"]
-    if flag == 0:
-        pass
-    elif flag == 1:
-        time.sleep(60)
-        print("task suspended")
-        continue
-    elif flag == 2:
-        break
+# while 1:
+#     control_json = Utils.load_json(control_json_path)
+#     flag = control_json["flag"]
+#     if flag == 0:
+#         pass
+#     elif flag == 1:
+#         time.sleep(60)
+#         print("task suspended")
+#         continue
+#     elif flag == 2:
+#         break
 
-    json_path = TASK_FOLDER + "\\%d.json" % i
-    if not os.path.isfile(json_path):
-        break
-    print("task:", json_path)
+#     json_path = TASK_FOLDER + "\\%d.json" % i
+#     if not os.path.isfile(json_path):
+#         break
+#     print("task:", json_path)
 
-    taskparams = Utils.load_json(json_path)["task_params"]
-    TaskExecutor(taskparams).run()
+#     taskparams = Utils.load_json(json_path)["task_params"]
+#     TaskExecutor(taskparams).run()
 
-    i += 1
+#     i += 1
