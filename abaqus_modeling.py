@@ -322,6 +322,7 @@ class TaskExecutor:
         task_model = mdb.Model(name=self.modelname, modelType=STANDARD_EXPLICIT)
         del mdb.models["Model-1"]
         x_len, y_len, z_len = self.x_len, self.y_len, self.z_len
+        gap = self.gap
 
         # ===部件-混凝土
         s1 = task_model.ConstrainedSketch(name="__profile__", sheetSize=10000.0)
@@ -638,12 +639,12 @@ class TaskExecutor:
         if self.pole_exist:
             v1 = a.instances["union-1"].vertices
             vert1 = v1.getByBoundingBox(
-                0 + self.gap,
-                0 + self.gap,
-                0 - self.gap,
-                x_len - self.gap,
-                y_len - self.gap,
-                0 + self.gap,
+                0 + gap,
+                0 + gap,
+                0 - gap,
+                x_len - gap,
+                y_len - gap,
+                0 + gap,
             )
             region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
         else:
@@ -676,12 +677,12 @@ class TaskExecutor:
         if self.pole_exist:
             v1 = a.instances["union-1"].vertices
             vert1 = v1.getByBoundingBox(
-                0 + self.gap,
-                0 + self.gap,
-                z_len - self.gap,
-                x_len - self.gap,
-                y_len - self.gap,
-                z_len + self.gap,
+                0 + gap,
+                0 + gap,
+                z_len - gap,
+                x_len - gap,
+                y_len - gap,
+                z_len + gap,
             )
             region4 = regionToolset.Region(edges=edges2, faces=faces1, vertices=vert1)
         else:
@@ -803,7 +804,7 @@ class TaskExecutor:
             edges1 = e1.getByBoundingCylinder(
                 center1=(x_len / 2.0, y_len / 2.0, 0),
                 center2=(x_len / 2.0, y_len / 2.0, z_len),
-                radius=math.sqrt(x_len * x_len + y_len * y_len) - self.gap,
+                radius=math.sqrt(x_len * x_len + y_len * y_len) - gap,
             )
             region1 = regionToolset.Region(edges=edges1)
             task_model.EmbeddedRegion(
@@ -824,7 +825,7 @@ class TaskExecutor:
             edges = e.getByBoundingCylinder(
                 center1=(x_len / 2.0, y_len / 2.0, 0),
                 center2=(x_len / 2.0, y_len / 2.0, z_len),
-                radius=math.sqrt(x_len * x_len + y_len * y_len) - self.gap,
+                radius=math.sqrt(x_len * x_len + y_len * y_len) - gap,
             )
             pickedRegions = (edges,)
             p.setElementType(regions=pickedRegions, elemTypes=(elemType1,))
