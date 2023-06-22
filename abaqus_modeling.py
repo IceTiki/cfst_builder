@@ -3,7 +3,6 @@
 from abaqus import *
 from abaqusConstants import *
 from caeModules import *
-from caeModules import *
 from driverUtils import executeOnCaeStartup
 
 # 标准库
@@ -22,8 +21,6 @@ GAP = 1  #  取一个小值, 用于几何选取函数等, 用于将选框向内�
 
 
 class Path:
-    ABAQUS_WORKDIR = os.path.abspath(os.getcwd())
-
     def __init__(self, path):
         if isinstance(path, self.__class__):
             self.__dict__.update(path.__dict__)
@@ -126,97 +123,146 @@ class Utils:
         return content
 
 
-class TaskHandler:
-    gap = GAP
-
-    def __init__(self, taskparams):
+class TaskExecutor:
+    def __init__(self, taskparams, workdir="./"):
         self.taskparams = taskparams
-        self.load_params()
-        self.load_material()
-        self.load_geometry()
-        self.load_referpoint()
-        self.load_pullroll()
-        self.load_meta()
+        self.workdir = workdir
+        self.load_task_params()
 
-    def load_params(self):
-        self.materials, self.geometry, self.pullroll, self.meta = (
-            self.taskparams["materials"],
-            self.taskparams["geometry"],
-            self.taskparams["pullroll"],
-            self.taskparams["meta"],
+    def load_task_params(self):
+        params = self.taskparams
+        # ===一级释放
+        (
+            self.materials,
+            self.geometry,
+            self.referpoint,
+            self.rod_pattern,
+            self.meta,
+            self.comment,
+        ) = (
+            params["materials"],
+            params["geometry"],
+            params["referpoint"],
+            params["rod_pattern"],
+            params["meta"],
+            params["comment"],
         )
 
-    def load_material(self):
-        # ===混凝土
-        materdata = self.materials["concrete"]
-        self.concrete_plasticity_model = tuple(
-            (i, j) for i, j in zip(materdata["sigma"], materdata["epsilon"])
-        )
-        self.concrete_gfi = (
-            (
-                self.materials["concrete"]["strength_fracture"],
-                self.materials["concrete"]["gfi"],
+        materials = self.materials
+
+        def load_steel(params):
+            return {
+                "plastic_model": tuple(
+                    (i, j) for i, j in zip(params["sigma"], params["epsilon"])
+                ),
+                "elastic_modulus": params["elastic_modulus"],
+                "poissons_ratio": params["poissons_ratio"],
+            }
+
+        # ===材料-混凝土
+        mtl_concrete_params = materials["concrete"]
+        self.mtl_concrete = {
+            "plastic_model": tuple(
+                (i, j)
+                for i, j in zip(
+                    mtl_concrete_params["sigma"], mtl_concrete_params["epsilon"]
+                )
             ),
-        )
-        self.concrete_elastic_modulus = self.materials["concrete"]["elastic_modulus"]
-        # ===钢管
-        materdata = self.materials["steel"]
-        self.steel_plasticity_model = tuple(
-            (i, j) for i, j in zip(materdata["sigma"], materdata["epsilon"])
-        )
+            "gfi": (
+                mtl_concrete_params["strength_fracture"],
+                mtl_concrete_params["gfi"],
+            ),
+            "elastic_modulus": mtl_concrete_params["elastic_modulus"],
+            "poissons_ratio": mtl_concrete_params["poissons_ratio"],
+            "cdp_params": mtl_concrete_params["cdp_params"],
+        }
 
-        # ===钢筋
-        materdata = self.materials["steelbar"]
-        self.steelbar_plasticity_model = tuple(
-            (i, j) for i, j in zip(materdata["sigma"], materdata["epsilon"])
-        )
+        # ===材料-钢管
+        mtl_tubelar_params = self.materials["tubelar"]
+        self.mtl_tubelar = load_steel(mtl_tubelar_params)
 
-    def load_geometry(self):
+        # ===材料-约束拉杆
+        mtl_rod_params = self.materials["rod"]
+        self.mtl_rod = load_steel(mtl_rod_params)
+
+        # ===材料-中心立杆
+        mtl_pole_params = self.materials["pole"]
+        self.mtl_pole = load_steel(mtl_pole_params)
+
+        # ===几何
         (
             self.x_len,
             self.y_len,
             self.z_len,
-            self.tube_thickness,
+            self.tubelar_thickness,
             self.concrete_seed,
             self.steel_seed,
-            self.common_point,
+            self.grid_minsize,
         ) = (
             self.geometry["x_len"],
             self.geometry["y_len"],
             self.geometry["z_len"],
-            self.geometry["tube_thickness"],
+            self.geometry["tubelar_thickness"],
             self.geometry["concrete_grid_size"],
             self.geometry["steel_grid_size"],
-            self.geometry["common_parameters"],
+            self.geometry["grid_minsize"],
         )
 
-    def load_referpoint(self):
-        # ===顶部
-        self.referpoint_top = self.taskparams["referpoint"]["top"]["position"]
-        value = self.taskparams["referpoint"]["top"]["displacement"]
-        self.displacement_top = tuple((UNSET if i is None else i) for i in value)
+        # ===参考点
+        referpoint = self.referpoint
+        self.referpoint_top = {
+            "position": referpoint["top"]["position"],
+            "displacement": tuple(
+                (UNSET if i is None else i) for i in referpoint["top"]["position"]
+            ),
+        }
+        self.referpoint_bottom = {
+            "position": referpoint["bottom"]["position"],
+            "displacement": tuple(
+                (UNSET if i is None else i) for i in referpoint["bottom"]["position"]
+            ),
+        }
 
-        # ===底部
-        self.referpoint_bottom = self.taskparams["referpoint"]["bottom"]["position"]
-        value = self.taskparams["referpoint"]["bottom"]["displacement"]
-        self.displacement_bottom = tuple((UNSET if i is None else i) for i in value)
+        # ===约束拉杆样式
+        self.rod_exist = bool(self.rod_pattern["pattern_rod"])
+        self.pole_exist = bool(self.rod_pattern["pattern_pole"])
+        self.union_exist = self.rod_exist or self.pole_exist
 
-    def load_pullroll(self):
-        self.rod_exist = bool(self.pullroll["pattern_rod"])
-        self.pole_exist = bool(self.pullroll["pattern_pole"])
-        self.flag_union = self.rod_exist or self.pole_exist
-
-    def load_meta(self):
-        self.caepath, self.jobname, self.modelname = (
-            self.meta["caepath"].encode("ascii"),
-            self.meta["jobname"].encode("ascii"),
-            self.meta["modelname"].encode("ascii"),
+        # ===元参数
+        meta_info = self.meta
+        (
+            self.jobname,
+            self.caepath,
+            self.taskfolder,
+            self.modelname,
+            self.performance,
+        ) = map(
+            str,
+            (
+                meta_info["jobname"],
+                meta_info["caepath"],
+                meta_info["taskfolder"],
+                meta_info["modelname"],
+                meta_info["performance"],
+            ),
         )
 
-        self.work_stafile = os.getcwd() + "\\%s.sta" % self.jobname
-        self.work_odbpath = (
-            (os.getcwd() + "\\%s.odb" % self.jobname).decode("utf-8").encode("ascii")
-        )
+        self.workdir_statusfile = os.path.join(self.workdir, "%s.sta" % self.jobname)
+        self.workdir_odb = os.path.join(self.workdir, "\%s.odb" % self.jobname)
+        self.gap = meta_info["gap"]
+
+        static_step_params = meta_info["static_step"]
+        self.static_step = {
+            "maxNumInc": static_step_params["maxNumInc"],
+            "initialInc": static_step_params["initialInc"],
+            "minInc": static_step_params["minInc"],
+            "nlgeom": static_step_params["nlgeom"],
+            "stabilization_method": static_step_params["stabilization_method"],
+            "continue_damping_factors": SymbolicConstant(
+                static_step_params["continue_damping_factors"]
+            ),
+            "adaptive_damping_ratio": static_step_params["adaptive_damping_ratio"],
+        }
 
     @property
     def edge_point(self):
@@ -255,25 +301,24 @@ class TaskHandler:
 
     def run(self):
         # ===abaqus初始化
-        print("task start at:" + self.caepath)
-        session.Viewport(
-            name="Viewport: 1",
-            origin=(0.0, 0.0),
-            width=117.13020324707,
-            height=100.143524169922,
-        )
-        session.viewports["Viewport: 1"].makeCurrent()
-        session.viewports["Viewport: 1"].maximize()
+        print("SCIIPT> task running at: ", self.caepath)
+        print("SCIIPT> model name is: ", self.modelname)
+        # session.Viewport(
+        #     name="Viewport: 1",
+        #     origin=(0.0, 0.0),
+        #     width=117.13020324707,
+        #     height=100.143524169922,
+        # )
+        # session.viewports["Viewport: 1"].makeCurrent()
+        # session.viewports["Viewport: 1"].maximize()
 
-        executeOnCaeStartup()
-        session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
-            referenceRepresentation=ON
-        )
+        # executeOnCaeStartup()
+        # session.viewports["Viewport: 1"].partDisplay.geometryOptions.setValues(
+        #     referenceRepresentation=ON
+        # )
         Mdb()
-        print(self.modelname)
+        
         mdb.Model(name=self.modelname, modelType=STANDARD_EXPLICIT)
-        #: 新的模型数据库已创建.
-        #: 模型 modelname 已创建.
         del mdb.models["Model-1"]
 
         # ===部件-混凝土
