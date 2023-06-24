@@ -160,9 +160,10 @@ class Log:
 
 
 class TaskExecutor:
-    def __init__(self, taskparams, workdir="./"):
+    def __init__(self, taskparams, workdir="."):
         self.taskparams = taskparams
-        self.workdir = workdir
+        self.workdir = os.path.abspath(workdir)
+        self.job_running_log = {}
 
         params = self.taskparams
         # ===一级释放
@@ -267,26 +268,11 @@ class TaskExecutor:
 
         # ===元参数
         meta_info = self.meta
-        (
-            self.jobname,
-            self.caepath,
-            self.taskfolder,
-            self.modelname,
-        ) = map(
-            str,
-            (
-                meta_info["jobname"],
-                meta_info["caepath"],
-                meta_info["taskfolder"],
-                meta_info["modelname"],
-            ),
-        )
+        self.taskname = str(meta_info["taskname"])
 
-        self.workdir_statusfile = os.path.join(self.workdir, "%s.sta" % self.jobname)
-        self.workdir_odb = os.path.join(self.workdir, "\%s.odb" % self.jobname)
         self.gap = meta_info["gap"]
 
-        # 杂项参数
+        # ===杂项参数
         self.misc["friction_factor_between_concrete_tubelar"] = self.misc.pop(
             "friction_factor_between_concrete_tubelar"
         )
@@ -311,6 +297,17 @@ class TaskExecutor:
             "continue_damping_factors": static_step_params["continue_damping_factors"],
             "adaptive_damping_ratio": static_step_params["adaptive_damping_ratio"],
         }
+
+        # ===路径生成
+        self.path_status = os.path.join(self.workdir, "%s.sta" % self.taskname)
+        self.path_odb = os.path.join(self.workdir, "%s.odb" % self.taskname)
+        self.path_cae = os.path.join(self.workdir, "%s.cae" % self.taskname)
+        self.path_result = os.path.join(self.workdir, "result")
+        if not os.path.exists(self.path_result):
+            os.makedirs(self.path_result)
+        self.path_avi = os.path.join(self.path_result, "animation.avi")
+        self.path_resjson = os.path.join(self.path_result, "result.json")
+        self.path_inpjson = os.path.join(self.path_result, "input.json")
 
     @property
     def edge_point(self):
@@ -349,12 +346,17 @@ class TaskExecutor:
         }
 
     def run(self):
-        # ===abaqus初始化
-        print("SCIIPT> task running at: ", self.caepath)
-        print("SCIIPT> model name is: ", self.modelname)
+        self.modeling()
+        self.calculate()
+        self.extract_odb_data()
+
+    def modeling(self):
+        # ===ABAQUS初始化
+        Log.log("TaskExecutor> task running at: ", os.getcwd())
+        Log.log("TaskExecutor> model name is: ", self.taskname)
         # ===初始化常用变量
         Mdb()
-        task_model = mdb.Model(name=self.modelname, modelType=STANDARD_EXPLICIT)
+        task_model = mdb.Model(name=self.taskname, modelType=STANDARD_EXPLICIT)
         del mdb.models["Model-1"]
         x_len, y_len, z_len = self.x_len, self.y_len, self.z_len
         gap = self.gap
@@ -930,130 +932,126 @@ class TaskExecutor:
             numGPUs=self.performance["num_gpus"],
         )
         # ======保存======
-        mdb.saveAs(pathName=self.caepath)
+        mdb.saveAs(pathName=self.path_cae)
+
+        Mdb()
+
+    def calculate(self):
+        Mdb()
+        openMdb(self.path_cae)
 
         # ======提交======
-        if self.meta["submit"]:
-            # ===作业开始
-            st_time = time.time()
-            try:
-                mdb.jobs[self.jobname].submit()
+        # ===作业开始
+        st_time = time.time()
+        try:
+            mdb.jobs[self.taskname].submit()
 
-                line = 5
-                job_running = True
-                stafile = self.workdir_statusfile
-                # ===输出status
-                status_output = 30
-                while not os.path.isfile(stafile) and status_output:
-                    time.sleep(10)
-                    status_output -= 1
-                if status_output:
-                    with io.open(stafile, "rt", encoding="gbk") as f:
-                        while job_running:
-                            f.seek(0, 0)
-                            status = f.read().splitlines()
-                            for i in range(line, len(status)):
-                                line_content = status[i]
-                                if "COMPLETED" in line_content:
-                                    job_running = False
-                                    break
-                                if (
-                                    self.meta["time_limit"]
-                                    and time.time() - st_time > self.meta["time_limit"]
-                                ):
-                                    raise Exception("job time out")
-                                print(line_content)
-                                print("time used: ", time.time() - st_time)
-                                line += 1
-                            time.sleep(20)
+            job_running = True
+            stafile = self.path_status
+            # ===输出status
+            status_output = 300
+            while not os.path.isfile(stafile) and status_output:
+                time.sleep(1)
+                status_output -= 1
+            if status_output:
+                with io.open(stafile, "rt", encoding="gbk") as f:
+                    f.seek(0, 0)
+                    while job_running:
+                        time.sleep(1)
+                        status_text = f.read()
+                        if not status_text:
+                            continue
+                        status_text_list = status_text.splitlines()
+                        for line in status_text_list:
+                            if "COMPLETED" in line:
+                                job_running = False
+                                break
+                            if (
+                                self.meta["time_limit"]
+                                and time.time() - st_time > self.meta["time_limit"]
+                            ):
+                                raise Exception("job time out")
+                            Log.log(
+                                "TaskExecutor> %s\nTaskExecutor> time used: %f"
+                                % (line, time.time() - st_time)
+                            )
+            mdb.jobs[self.taskname].waitForCompletion()
+            job_running_time = time.time() - st_time
+            Log.log("TaskExecutor> job running time(s):", job_running_time)
+            self.job_running_log = {
+                "status": "success",
+                "job_running_time": job_running_time,
+            }
+        except Exception:
+            error = traceback.format_exc()
+            Log.log(error)
+            mdb.jobs[self.taskname].kill()
+            self.job_running_log = {"status": "error", "msg": str(error)}
 
-                mdb.jobs[self.jobname].waitForCompletion()
-                job_time = time.time() - st_time
-                print("job running time(s):", job_time)
-            except Exception:
-                traceback.print_exc()
-                mdb.jobs[self.jobname].kill()
+        Mdb()
+        return self.job_running_log
 
-            try:
-                odbpath = self.workdir_odb
-                odb = session.openOdb(name=odbpath)
+    def extract_odb_data(self):
+        Mdb()
+        odbpath = self.path_odb
+        odb = session.openOdb(name=odbpath)
 
-                # ===保存应力应变曲线
-                xy0 = xyPlot.XYDataFromHistory(
-                    odb=odb,
-                    outputVariableName="Reaction force: RF3 PI: rootAssembly Node 2 in NSET RP-TOP",
-                    steps=("Step-1",),
-                    suppressQuery=True,
-                    __linkedVpName__="Viewport: 1",
-                )
-                xy1 = xyPlot.XYDataFromHistory(
-                    odb=odb,
-                    outputVariableName="Spatial displacement: U3 PI: rootAssembly Node 2 in NSET RP-TOP",
-                    steps=("Step-1",),
-                    suppressQuery=True,
-                    __linkedVpName__="Viewport: 1",
-                )
+        # ===保存应力应变曲线
+        xy0 = xyPlot.XYDataFromHistory(
+            odb=odb,
+            outputVariableName="Reaction force: RF3 PI: rootAssembly Node 2 in NSET RP-TOP",
+            steps=("Step-1",),
+            suppressQuery=True,
+            __linkedVpName__="Viewport: 1",
+        )
+        xy1 = xyPlot.XYDataFromHistory(
+            odb=odb,
+            outputVariableName="Spatial displacement: U3 PI: rootAssembly Node 2 in NSET RP-TOP",
+            steps=("Step-1",),
+            suppressQuery=True,
+            __linkedVpName__="Viewport: 1",
+        )
 
-                top_point_data = {
-                    "load": [-i[1] for i in xy0],
-                    "load_k": [-i[1] / 1000.0 for i in xy0],
-                    "displacement": xy1,
-                    "epsilon": [-i[1] / float(z_len) for i in xy1],
-                    "time": [i[0] for i in xy0],
-                }
+        top_point_data = {
+            "load": [-i[1] for i in xy0],
+            "load_k": [-i[1] / 1000.0 for i in xy0],
+            "displacement": list(xy1),
+            "epsilon": [-i[1] / float(self.z_len) for i in xy1],
+            "time": [i[0] for i in xy0],
+        }
+        data = {"top_point": top_point_data, "job_running_log": self.job_running_log}
+        Utils.write_json(
+            data,
+            self.path_resjson,
+        )
+        Utils.write_json(self.taskparams, self.path_inpjson)
+        Log.log("TaskExecutor> json saved")
 
-                data = {"top_point": top_point_data, "time_used": job_time}
-                Utils.write_json(
-                    data,
-                    self.meta["taskfolder"] + "\\result.json",
-                )
-                Utils.write_json(
-                    self.taskparams,
-                    self.meta["taskfolder"] + "\\input.json",
-                )
-                print("json saved")
+        # ===保存动画
+        session.viewports["Viewport: 1"].odbDisplay.basicOptions.setValues(
+            renderShellThickness=ON
+        )
+        session.viewports["Viewport: 1"].setValues(displayedObject=odb)
+        session.viewports["Viewport: 1"].makeCurrent()
+        session.viewports["Viewport: 1"].odbDisplay.display.setValues(
+            plotState=(CONTOURS_ON_DEF,)
+        )
+        session.viewports["Viewport: 1"].animationController.setValues(
+            animationType=TIME_HISTORY
+        )
+        session.viewports["Viewport: 1"].animationController.play(duration=UNLIMITED)
 
-                # ===保存动画
-                session.viewports["Viewport: 1"].odbDisplay.basicOptions.setValues(
-                    renderShellThickness=ON
-                )
-                session.viewports["Viewport: 1"].setValues(displayedObject=odb)
-                session.viewports["Viewport: 1"].makeCurrent()
-                session.viewports["Viewport: 1"].odbDisplay.display.setValues(
-                    plotState=(CONTOURS_ON_DEF,)
-                )
-                session.viewports["Viewport: 1"].animationController.setValues(
-                    animationType=TIME_HISTORY
-                )
-                session.viewports["Viewport: 1"].animationController.play(
-                    duration=UNLIMITED
-                )
+        session.imageAnimationOptions.setValues(
+            vpDecorations=ON, vpBackground=OFF, compass=OFF
+        )
+        session.writeImageAnimation(
+            fileName=self.path_avi,
+            format=AVI,
+            canvasObjects=(session.viewports["Viewport: 1"],),
+        )
+        Log.log("TaskExecutor> Animation saved")
+        Mdb()
 
-                session.imageAnimationOptions.setValues(
-                    vpDecorations=ON, vpBackground=OFF, compass=OFF
-                )
-                avipath = self.meta["taskfolder"].replace("\\", "/") + "/animation.avi"
-                avipath = avipath.decode("utf-8").encode("ascii")
-                session.writeImageAnimation(
-                    fileName=avipath,
-                    format=AVI,
-                    canvasObjects=(session.viewports["Viewport: 1"],),
-                )
-                print("animation saved")
-
-                # ===复制odb文件
-                shutil.copy(
-                    odbpath, self.meta["taskfolder"] + "\\%s.odb" % self.jobname
-                )
-                print("odb copied")
-            except Exception:
-                traceback.print_exc()
-
-
-taskparams = Utils.load_json("C:\\Users\\Tiki_\\Desktop\\tmp.json")["task_params"]
-TaskExecutor(taskparams).run()
-# control_json_path = os.path.join(TASK_FOLDER, "control.json")
-# control_json = Utils.load_json(control_json_path)
 
 
 # i = control_json["start_at"]
