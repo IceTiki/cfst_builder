@@ -514,9 +514,9 @@ class TaskExecutor:
         )
         # ===拉杆
         if self.rod_exist:
-            p = task_model.parts["rod_layer"]
+            p = task_model.parts["part_rod_layer"]
             region = regionToolset.Region(edges=p.edges)
-            p = task_model.parts["rod_layer"]
+            p = task_model.parts["part_rod_layer"]
             p.SectionAssignment(
                 region=region,
                 sectionName="sec_rod_layer",
@@ -605,22 +605,9 @@ class TaskExecutor:
                 mergeNodes=BOUNDARY_ONLY,
                 nodeMergingTolerance=1e-06,
                 domain=BOTH,
-            )  # 这一步会同时在part和instance里面创建merge_union(在part中创建的会去掉"-数字"后缀)
+            )  # 这一步会同时在part里面创建merge_union, 在instances中创建merge_union-1
 
         # ======创建分析步======
-        # task_model.StaticStep(
-        #     name="Step-1",
-        #     previous="Initial",
-        #     maxNumInc=10000,
-        #     initialInc=0.01,
-        #     minInc=1e-07,
-        #     nlgeom=ON,
-        # )  # TODO未被input.json控制的参数
-        # task_model.steps["Step-1"].setValues(
-        #     stabilizationMethod=DISSIPATED_ENERGY_FRACTION,
-        #     continueDampingFactors=True,
-        #     adaptiveDampingRatio=0.05,
-        # )  # TODO未被input.json控制的参数
         task_model.StaticStep(
             name="Step-1",
             previous="Initial",
@@ -653,14 +640,14 @@ class TaskExecutor:
             )
         )
         if self.union_exist:
-            e2 = a.instances["merge_union"].edges
+            e2 = a.instances["merge_union-1"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
         else:
             e2 = ins_tubelar.edges
             edges2 = e2.findAt(coordinates=self.edge_point["bottom_all"])
 
         if self.pole_exist:
-            v1 = a.instances["merge_union"].vertices
+            v1 = a.instances["merge_union-1"].vertices
             vert1 = v1.getByBoundingBox(
                 0 + gap,
                 0 + gap,
@@ -690,14 +677,14 @@ class TaskExecutor:
             )
         )
         if self.union_exist:
-            e2 = a.instances["merge_union"].edges
+            e2 = a.instances["merge_union-1"].edges
             edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
         else:
             e2 = ins_tubelar.edges
             edges2 = e2.findAt(coordinates=self.edge_point["top_all"])
 
         if self.pole_exist:
-            v1 = a.instances["merge_union"].vertices
+            v1 = a.instances["merge_union-1"].vertices
             vert1 = v1.getByBoundingBox(
                 0 + gap,
                 0 + gap,
@@ -784,7 +771,7 @@ class TaskExecutor:
         # ===设置相互作用: 钢管-混凝土(硬接触和摩擦)相互作用
         a = task_model.rootAssembly
         if self.union_exist:
-            s1 = a.instances["merge_union"].faces
+            s1 = a.instances["merge_union-1"].faces
             side2Faces1 = s1.getSequenceFromMask(
                 mask=("[#f ]",),
             )
@@ -816,7 +803,7 @@ class TaskExecutor:
         # ===设置内置区域约束: 钢筋, 混凝土
         if self.union_exist:
             a1 = task_model.rootAssembly
-            e1 = a.instances["merge_union"].edges
+            e1 = a.instances["merge_union-1"].edges
             edges1 = e1.getByBoundingCylinder(
                 center1=(x_len / 2.0, y_len / 2.0, 0),
                 center2=(x_len / 2.0, y_len / 2.0, z_len),
@@ -917,8 +904,8 @@ class TaskExecutor:
 
         # ======生成作业======
         mdb.Job(
-            name=self.jobname,
-            model=self.modelname,
+            name=self.taskname,
+            model=self.taskname,
             description="",
             type=ANALYSIS,
             atTime=None,
