@@ -12,12 +12,10 @@ import io
 import time
 import os
 import traceback
-import shutil
+import sys
 import urllib2
 
-
-ABAQUS_WORKDIR = os.path.abspath(os.getcwd())
-TASK_FOLDER = ".\\"
+ORIGIN_WORKDIR = os.path.abspath(os.getcwd())
 
 
 class Path:
@@ -121,6 +119,44 @@ class Utils:
         response = urllib2.urlopen(url)
         content = response.read()
         return content
+
+    @staticmethod
+    def format_time(with_date=False):
+        time_struct = time.localtime()
+        date_str = "%d-%d-%d" % (
+            time_struct.tm_year,
+            time_struct.tm_mon,
+            time_struct.tm_mday,
+        )
+        time_str = "%d-%d-%d" % (
+            time_struct.tm_hour,
+            time_struct.tm_min,
+            time_struct.tm_sec,
+        )
+        if with_date:
+            return "%s--%s" % (date_str, time_str)
+        return time_str
+
+
+class Log:
+    log_path = os.path.join(ORIGIN_WORKDIR, "%s_log.txt" % Utils.format_time(True))
+    log_txt_file = io.open(log_path, "a", encoding="utf-8")
+
+    @classmethod
+    def log(cla, *args, **kwargs):
+        kwargs.setdefault("seq", " ")
+        args = map(
+            lambda x: x.encode("unicode_escape").decode("ascii")
+            if isinstance(x, unicode)
+            else str(x),
+            args,
+        )
+        fm_str = kwargs["seq"].join(list(args))
+        fm_str = "|||%s|||\n%s" % (Utils.format_time(True), fm_str)
+        print(fm_str)
+
+        cla.log_txt_file.write((fm_str + "\n").decode("utf-8"))
+        cla.log_txt_file.flush()
 
 
 class TaskExecutor:
