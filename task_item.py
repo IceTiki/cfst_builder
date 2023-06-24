@@ -1,36 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import itertools
 from pathlib import Path
-from typing import Union, Literal
+from typing import Union, Literal, Iterable
 import math
 import numpy as np
-import json
 
 from materlib import materials, constitutive_models
-from tikilib import crypto as tc
-from tikilib import text as tt
-
-
-class Utils:
-    def __encrypt(content: str):
-        return tc.SimpleAES_StringCrypto("2023_graduation_project").encrypt(content)
-
-    def __decrypt(content: str):
-        return tc.SimpleAES_StringCrypto("2023_graduation_project").decrypt(content)
-
-    @classmethod
-    def get_encrypt_code(cla):
-        # TODO
-        repository = Path(__file__).parent
-        data = {}
-        for i in repository.glob("*.py"):
-            k = str(i.name)
-            v = i.read_text(encoding="utf-8")
-            k, v = map(cla.__encrypt, (k, v))
-            data[k] = v
-
-        data = json.dumps(data, ensure_ascii=False)
-        return data
+from utils import format_time, JsonFile
 
 
 @dataclass
@@ -108,10 +84,10 @@ class Geometry:
             "x_len": self.x_len,
             "y_len": self.y_len,
             "z_len": self.z_len,
-            "tube_thickness": self.tubelar_thickness,
+            "tubelar_thickness": self.tubelar_thickness,
             "concrete_grid_size": self.concrete_grid_size,
             "steel_grid_size": self.steel_grid_size,
-            "common_parameters": self.common_parameters,
+            "grid_minsize": 0.1,
         }
 
 
@@ -147,7 +123,7 @@ class ReferencePoint:
         shift : list[float]
             偏移量(x,y,z)
         displacement : list[float | None]
-            固定位移(U1, U2, U3, RU1, RU2, RU3), 如果为None会转变为abaqus的UNSET(无约束)
+            固定位移(U1, U2, U3, RU1, RU2, RU3), 设置位移量请使用float类型, 无约束请使用None
         face : {'top', 'bottom'}
             面(顶面/底面)
         """
@@ -196,6 +172,45 @@ class RodPattern:
     number_layer_rods: float
     number_layers: int
     layer_spacing: float
+
+    rod_ushape_pattern_library = {
+        "alpha": [
+            [[1 / 2, 0], [1 / 2, 1]],
+            [[0, 1 / 2], [1, 1 / 2]],
+        ],
+        "beta": [
+            [[1 / 2, 1 / 3], [1 / 2, 0]],
+            [[1 / 2, 1 / 3], [0, 1 / 3]],
+            [[1 / 2, 1 / 3], [1, 1 / 3]],
+            [[1 / 2, 2 / 3], [1 / 2, 1]],
+            [[1 / 2, 2 / 3], [0, 2 / 3]],
+            [[1 / 2, 2 / 3], [1, 2 / 3]],
+        ],
+        "gamma": [
+            [[1 / 2, 1 / 4], [1 / 2, 0]],
+            [[1 / 2, 1 / 4], [0, 1 / 4]],
+            [[1 / 2, 1 / 4], [1, 1 / 4]],
+            [[1 / 2, 3 / 4], [1 / 2, 1]],
+            [[1 / 2, 3 / 4], [0, 3 / 4]],
+            [[1 / 2, 3 / 4], [1, 3 / 4]],
+            [[0, 1 / 2], [1, 1 / 2]],
+        ],
+    }
+
+    pole_ushape_pattern_library = {
+        "alpha": [
+            [1 / 2, 1 / 2],
+        ],
+        "beta": [
+            [1 / 2, 1 / 3],
+            [1 / 2, 2 / 3],
+        ],
+        "gamma": [
+            [1 / 2, 1 / 4],
+            [1 / 2, 2 / 4],
+            [1 / 2, 3 / 4],
+        ],
+    }
 
     @staticmethod
     def get_division(number: int) -> tuple:
@@ -320,68 +335,33 @@ class TaskMeta:
 
     Parameters
     ---
-    jobname : str
-        job名
-    caename : str
-        cae名称
-    taskfolder : str
-        任务数据保存路径
-    modelname : str
-        model名
+    taskname : str
+        job和model的命名, 影响到cae, odb等的文件名
 
-    submit : bool
-        是否提交作业
     time_limit : float
         作业最高运行时间(秒)
 
-    static_step : dict
-        静态分析步
+    gap : float
+        选区边缘内缩长度(比如: 框选对象时, 但不包括边界上的对象时, 选区向内缩的长度)
 
     """
 
-    jobname: str
-    caename: str
-    taskfolder: str
-    modelname: str
+    taskname: str
 
-    submit: bool = True
     time_limit: float = None
-    static_step: dict = {
-        "maxNumInc": 10000,  # 最大步数
-        "initialInc": 0.01,  # 初始步长
-        "minInc": 1e-07,  # 最小步长
-        "nlgeom": True,  # 非线性
-        "stabilization_method": "DISSIPATED_ENERGY_FRACTION",  # 自动稳定方式
-        "continue_damping_factors": True,
-        "adaptive_damping_ratio": 0.05,
-    }
-    #   "stabilization_method": "NONE",  # 自动稳定方式
-    #   "continue_damping_factors": False,
-    #   "adaptive_damping_ratio": 0,
 
-    @property
-    def caepath(self):
-        taskfolder = Path(self.taskfolder)
-        return str(taskfolder / self.caename)
+    gap: float = 1.0
 
     @classmethod
-    def inti_2(cla, name: str, path: str):
+    def inti_2(cla, name: str):
         """快速构造类"""
-        return cla(
-            "job_" + name,
-            "cae_" + name,
-            path,
-            "model_" + name,
-        )
+        return cla(name)
 
     def extract(self):
         return {
-            "jobname": str(self.jobname),
-            "caepath": str(self.caepath),
-            "taskfolder": str(self.taskfolder),
-            "modelname": str(self.modelname),
-            "submit": self.submit,
+            "taskname": str(self.taskname),
             "time_limit": self.time_limit,
+            "gap": self.gap,
         }
 
 
@@ -405,6 +385,8 @@ class AbaqusData:
         约束拉杆材料
     material_pole: materials.SteelBar
         中心立杆材料
+    comment : dict
+        备注
 
     Note
     ---
@@ -421,6 +403,115 @@ class AbaqusData:
     material_tubelar: materials.Steel
     material_rod: materials.SteelBar
     material_pole: materials.SteelBar
+    comment: dict = field(default_factory=dict)
+
+    def name_iter(prefix=f"{format_time()}_ecc_cfst_alpha_", suffix="", start=0):
+        num = start
+        while 1:
+            yield f"{prefix}{num}{suffix}"
+            num += 1
+
+    @staticmethod
+    def get_ecc_cfst_alpha_template(
+        name_iter: Iterable = name_iter,
+    ):
+        """
+
+        Parameters
+        ---
+        name_iter : Iterable
+            任务名迭代器
+        """
+        params = {
+            "concrete": "C60",
+            "tubelar": "Q390",
+            "rod": "HRB400",
+            "pole": "HRB400",
+            "width": 300,
+            "high": 300,
+            "length": 1200,
+            "tubelar_thickness": 6,
+            "mesh": ((9, 9, 36), (9, 9, 36)),
+            "e": 0.233,
+            "pattern_rod": tuple(),
+            "pattern_pole": tuple(),
+            "rod_dia": 14,
+            "pole_dia": 24,
+            "layer_number": 8,
+            "name": next(name_iter),
+            "comment": {},
+        }
+        return params
+
+    @classmethod
+    def init_ecc_cfst_alpha(cla, params):
+        """偏压CFST快速建模参数"""
+
+        # ===材料参数
+        mater_iter1 = [params[i] for i in ["concrete", "tubelar", "rod", "pole"]]
+        mater_iter2 = [
+            materials.Concrete,
+            materials.Steel,
+            materials.SteelBar,
+            materials.SteelBar,
+        ]
+        mater_iter3 = [
+            "strength_criterion_pressure",
+            "strength_yield",
+            "strength_criterion_yield",
+            "strength_criterion_yield",
+        ]
+        mater_iter = [
+            j.from_table(i) if isinstance(i, str) else j.from_table_property(k, i)
+            for i, j, k in zip(mater_iter1, mater_iter2, mater_iter3)
+        ]
+        mater_concrete, mater_tubelar, mater_rod, mater_pole = mater_iter
+
+        # ===几何参数
+        geo = Geometry(
+            params["width"],
+            params["high"],
+            params["length"],
+            params["tubelar_thickness"],
+            *params["mesh"],
+        )
+
+        # ===参考点
+        bar_e_0 = params["e"]  # 偏心距
+        rp_top = ReferencePoint.init_from_datum(
+            geo, [0, geo.y_len * bar_e_0, 0], [0, 0, -geo.z_len / 10, None, 0, 0], "top"
+        )
+        rp_bottom = ReferencePoint.init_from_datum(
+            geo, [0, geo.y_len * bar_e_0, 0], [0, 0, 0, None, 0, 0], "bottom"
+        )
+
+        # ===拉杆参数
+        roll = RodPattern.init_from_pattern(
+            geo,
+            params["rod_dia"],
+            params["pole_dia"],
+            params["pattern_rod"],
+            params["pattern_pole"],
+            params["layer_number"],
+        )
+
+        # ===元参数
+        taskname = params["name"]
+        meta = TaskMeta.inti_2(taskname)
+
+        # ===生成json
+        return cla(
+            meta,
+            geo,
+            roll,
+            rp_top,
+            rp_bottom,
+            mater_concrete,
+            mater_tubelar,
+            mater_rod,
+            mater_pole,
+            params["comment"],
+        )
 
     @property
     def __extract_material_tubelar(self, table_len: int = 10000) -> dict:
@@ -523,9 +614,56 @@ class AbaqusData:
             ],
         }
 
-    def extract(self) -> dict:
+    @property
+    def __extract_misc(self) -> dict:
+        static_step: dict = {
+            "max_num_inc": 10000,  # 最大步数
+            "initial_inc": 0.01,  # 初始步长
+            "min_inc": 1e-07,  # 最小步长
+            "nlgeom": "ON",  # 非线性
+            "stabilization_method": "DISSIPATED_ENERGY_FRACTION",  # 自动稳定方式
+            "continue_damping_factors": True,
+            "adaptive_damping_ratio": 0.05,
+        }
+        #   "stabilization_method": "NONE",  # 自动稳定方式
+        #   "continue_damping_factors": False,
+        #   "adaptive_damping_ratio": 0,
+        performance: dict = {
+            "memory": 90,
+            "num_cpus": 6,
+            "num_gpus": 1,  # 如果不调用GPU填0
+        }
         return {
-            "version": "alpha",
+            "static_step": static_step,
+            "performance": performance,
+            "friction_factor_between_concrete_tubelar": 0.6,  # 钢管-混凝土之间的摩擦系数
+            "tubelar_num_int_pts": 9,  # 钢管壳截面的积分数量
+        }
+
+    @property
+    def members_dict(self) -> dict:
+        return {
+            k: v.__dict__ if "__dict__" in dir(v) else v
+            for k, v in self.__dict__.items()
+        }
+
+    def gene_task_folder(self, path_output="tasks", calculate=True):
+        (Path(path_output) / self.meta.taskname).mkdir(parents=True, exist_ok=True)
+        JsonFile.write(
+            self.extract(),
+            (Path(path_output) / self.meta.taskname / "task_params.json"),
+        )
+        JsonFile.write(
+            {
+                "modelled": "TODO",
+                "calculated": "TODO" if calculate else "SKIP",
+                "extracted": "TODO" if calculate else "SKIP",
+            },
+            (Path(path_output) / self.meta.taskname / "task_status.json"),
+        )
+
+    def extract(self) -> dict:
+        task_params = {
             "materials": {
                 "concrete": self.__extract_material_concrete,
                 "tubelar": self.__extract_material_tubelar,
@@ -539,4 +677,12 @@ class AbaqusData:
             },
             "rod_pattern": self.rod_pattern.extract(),
             "meta": self.meta.extract(),
+            "misc": self.__extract_misc,
+            "comment": self.comment,
+        }
+
+        return {
+            "version": [0, 0, 0, "alpha"],
+            "task_params": task_params,
+            "user_params": self.members_dict,
         }
