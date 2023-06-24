@@ -1053,27 +1053,102 @@ class TaskExecutor:
         Mdb()
 
 
+class TaskHandler:
+    TASK_WAREHOUSE = os.path.join(ORIGIN_WORKDIR, "tasks")
 
-# i = control_json["start_at"]
+    @classmethod
+    def run_mode_folder(cla, task_warehouse=TASK_WAREHOUSE):
+        """
+        程序会在指定目录(task_warehouse)自动寻找所有带有task_params.json的文件夹
+        这个文件夹中, 会有一个task_status.json标识任务的工作状态。该json文件储存一个字典。
 
-# while 1:
-#     control_json = Utils.load_json(control_json_path)
-#     flag = control_json["flag"]
-#     if flag == 0:
-#         pass
-#     elif flag == 1:
-#         time.sleep(60)
-#         print("task suspended")
-#         continue
-#     elif flag == 2:
-#         break
+        Notes : task_status.json
+        ---
+        有modelled, calculated, extracted三个key, 分别代表该任务是否建模, 是否运算完成, 是否导出数据
+            - 未开始任务时, 值为"TODO"
+            - 不需要执行该项, 值为"SKIP"
+            - 完成任务时, 值为完成任务的时间戳
+        """
+        try:
+            if not os.path.exists(task_warehouse):
+                os.makedirs(task_warehouse)
+            cla.__run_mode_folder(task_warehouse)
+        finally:
+            os.chdir(ORIGIN_WORKDIR)
 
-#     json_path = TASK_FOLDER + "\\%d.json" % i
-#     if not os.path.isfile(json_path):
-#         break
-#     print("task:", json_path)
+    @classmethod
+    def __run_mode_folder(cla, task_warehouse=TASK_WAREHOUSE):
+        Log.log("TaskHandler> Finding task at %s" % task_warehouse)
+        # ===查找需要执行的任务
+        task_folder_list = []
+        Log.log("path", "is_task", "modelled", "calculated", "extracted", seq="\t")
+        for path in os.listdir(task_warehouse):
+            path = os.path.join(task_warehouse, path)
+            if not os.path.isdir(path):
+                Log.log("%s is not folder" % path)
+                continue
 
-#     taskparams = Utils.load_json(json_path)["task_params"]
-#     TaskExecutor(taskparams).run()
+            path_taskparams = os.path.join(path, "task_params.json")
+            path_taskstatus = os.path.join(path, "task_status.json")
+            is_task = os.path.exists(path_taskparams)
+            if not is_task:
+                Log.log(path, False, "", "", "", seq="\t")
+            if not os.path.exists(path_taskstatus):
+                Utils.write_json(
+                    {"modelled": "TODO", "calculated": "TODO", "extracted": "TODO"},
+                    path_taskstatus,
+                )
+            status = Utils.load_json(path_taskstatus)
+            Log.log(
+                path,
+                is_task,
+                status["modelled"],
+                status["calculated"],
+                status["extracted"],
+                seq="\t",
+            )
+            if is_task:
+                task_folder_list.append(path)
 
-#     i += 1
+        # ===开始执行任务
+        for task_folder in task_folder_list:
+            try:
+                cla.__execute_taskfolder(task_folder)
+            except Exception:
+                error = traceback.format_exc()
+                Log.log(error)
+
+    @staticmethod
+    def __execute_taskfolder(task_folder):
+        Log.log("TaskHandler> Attempt to execute task at %s" % task_folder)
+        path_taskparams = os.path.join(task_folder, "task_params.json")
+        path_taskstatus = os.path.join(task_folder, "task_status.json")
+        os.chdir(task_folder)
+        taskexecutor_instance = TaskExecutor(
+            Utils.load_json(path_taskparams)["task_params"]
+        )
+        taskstatus = Utils.load_json(path_taskstatus)
+        # 建模
+        if taskstatus["modelled"] == "TODO":
+            taskexecutor_instance.modeling()
+            taskstatus["modelled"] = time.time()
+            Utils.write_json(taskstatus, path_taskstatus)
+
+        # 计算
+        if taskstatus["calculated"] == "TODO" and isinstance(
+            taskstatus["modelled"], (int, float)
+        ):
+            taskexecutor_instance.calculate()
+            taskstatus["calculated"] = time.time()
+            Utils.write_json(taskstatus, path_taskstatus)
+
+        # 导出
+        if taskstatus["extracted"] == "TODO" and isinstance(
+            taskstatus["calculated"], (int, float)
+        ):
+            taskexecutor_instance.extract_odb_data()
+            taskstatus["extracted"] = time.time()
+            Utils.write_json(taskstatus, path_taskstatus)
+
+
+TaskHandler().run_mode_folder()
