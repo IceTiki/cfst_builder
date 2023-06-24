@@ -972,7 +972,7 @@ class TaskExecutor:
                             ):
                                 raise Exception("job time out")
                             Log.log(
-                                "TaskExecutor> %s\nTaskExecutor> time used: %f"
+                                "TaskExecutor> %s (%.2fs)"
                                 % (line, time.time() - st_time)
                             )
             mdb.jobs[self.taskname].waitForCompletion()
