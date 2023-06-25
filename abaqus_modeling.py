@@ -163,7 +163,8 @@ class TaskExecutor:
     def __init__(self, taskparams, workdir="."):
         self.taskparams = taskparams
         self.workdir = os.path.abspath(workdir)
-        self.job_running_log = {}
+        self.modeling_msg = {}
+        self.calculating_msg = {}
 
         params = self.taskparams
         # ===一级释放
@@ -302,12 +303,12 @@ class TaskExecutor:
         self.path_status = os.path.join(self.workdir, "%s.sta" % self.taskname)
         self.path_odb = os.path.join(self.workdir, "%s.odb" % self.taskname)
         self.path_cae = os.path.join(self.workdir, "%s.cae" % self.taskname)
-        self.path_result = os.path.join(self.workdir, "result")
+        self.path_result = os.path.join(self.workdir, "results")
         if not os.path.exists(self.path_result):
             os.makedirs(self.path_result)
         self.path_avi = os.path.join(self.path_result, "animation.avi")
-        self.path_resjson = os.path.join(self.path_result, "result.json")
-        self.path_inpjson = os.path.join(self.path_result, "input.json")
+        self.path_odb_data_json = os.path.join(self.path_result, "odb_extract.json")
+        self.path_param_copy_json = os.path.join(self.path_result, "task_params.json")
 
     @property
     def edge_point(self):
@@ -352,8 +353,8 @@ class TaskExecutor:
 
     def modeling(self):
         # ===ABAQUS初始化
-        Log.log("TaskExecutor> task running at: ", os.getcwd())
-        Log.log("TaskExecutor> model name is: ", self.taskname)
+        Log.log("TaskExecutor> Task running at: ", os.getcwd())
+        Log.log("TaskExecutor> Model name is: ", self.taskname)
         # ===初始化常用变量
         Mdb()
         task_model = mdb.Model(name=self.taskname, modelType=STANDARD_EXPLICIT)
@@ -878,10 +879,10 @@ class TaskExecutor:
         # ===创建集
         a = task_model.rootAssembly
         r1 = a.referencePoints
-        refPoints1 = (referpoint_top,)
-        a.Set(referencePoints=refPoints1, name="RP-TOP")
+        refPoints1 = (referpoint_top, referpoint_bottom)
+        a.Set(referencePoints=refPoints1, name="referpoint_set")
         # ===历程输出
-        regionDef = task_model.rootAssembly.sets["RP-TOP"]
+        regionDef = task_model.rootAssembly.sets["referpoint_set"]
         task_model.HistoryOutputRequest(
             name="TOP-OUTPUT",
             createStepName="Step-1",
@@ -977,8 +978,8 @@ class TaskExecutor:
                             )
             mdb.jobs[self.taskname].waitForCompletion()
             job_running_time = time.time() - st_time
-            Log.log("TaskExecutor> job running time(s):", job_running_time)
-            self.job_running_log = {
+            Log.log("TaskExecutor> Job running time(s):", job_running_time)
+            self.calculating_msg = {
                 "status": "success",
                 "job_running_time": job_running_time,
             }
@@ -986,10 +987,10 @@ class TaskExecutor:
             error = traceback.format_exc()
             Log.log(error)
             mdb.jobs[self.taskname].kill()
-            self.job_running_log = {"status": "error", "msg": str(error)}
+            self.calculating_msg = {"status": "error", "msg": str(error)}
 
         Mdb()
-        return self.job_running_log
+        return self.calculating_msg
 
     def extract_odb_data(self):
         Mdb()
@@ -997,35 +998,60 @@ class TaskExecutor:
         odb = session.openOdb(name=odbpath)
 
         # ===保存应力应变曲线
-        xy0 = xyPlot.XYDataFromHistory(
-            odb=odb,
-            outputVariableName="Reaction force: RF3 PI: rootAssembly Node 2 in NSET RP-TOP",
-            steps=("Step-1",),
-            suppressQuery=True,
-            __linkedVpName__="Viewport: 1",
-        )
-        xy1 = xyPlot.XYDataFromHistory(
-            odb=odb,
-            outputVariableName="Spatial displacement: U3 PI: rootAssembly Node 2 in NSET RP-TOP",
-            steps=("Step-1",),
-            suppressQuery=True,
-            __linkedVpName__="Viewport: 1",
-        )
 
-        top_point_data = {
-            "load": [-i[1] for i in xy0],
-            "load_k": [-i[1] / 1000.0 for i in xy0],
-            "displacement": list(xy1),
-            "epsilon": [-i[1] / float(self.z_len) for i in xy1],
-            "time": [i[0] for i in xy0],
+        def extract_xydata(output_variable_name, index_=1):
+            xydata = xyPlot.XYDataFromHistory(
+                odb=odb,
+                outputVariableName=output_variable_name,
+                steps=("Step-1",),
+                suppressQuery=True,
+                __linkedVpName__="Viewport: 1",
+            )
+            return list(map(lambda x: x[index_], xydata))
+
+        def get_point_data(point_name):
+            point_data = {}
+            point_data["time"] = extract_xydata(
+                "Reaction force: RF1 %s" % point_name, 0
+            )
+            for i in ("RF1", "RF2", "RF3"):
+                point_data[i] = extract_xydata(
+                    "Reaction force: %s %s" % (i, point_name)
+                )
+
+            for i in ("RM1", "RM2", "RM3"):
+                point_data[i] = extract_xydata(
+                    "Reaction moment: %s %s" % (i, point_name)
+                )
+
+            for i in ("UR1", "UR2", "UR3"):
+                point_data[i] = extract_xydata(
+                    "Rotational displacement: %s %s" % (i, point_name)
+                )
+
+            for i in ("U1", "U2", "U3"):
+                point_data[i] = extract_xydata(
+                    "Spatial displacement: %s %s" % (i, point_name)
+                )
+
+            return point_data
+
+        data = {
+            "bottom_referpoint": get_point_data(
+                "PI: rootAssembly Node 1 in NSET REFERPOINT_SET"
+            ),
+            "top_referpoint": get_point_data(
+                "PI: rootAssembly Node 2 in NSET REFERPOINT_SET"
+            ),
+            "modeling_msg": self.modeling_msg,
+            "calculating_msg": self.calculating_msg,
         }
-        data = {"top_point": top_point_data, "job_running_log": self.job_running_log}
         Utils.write_json(
             data,
-            self.path_resjson,
+            self.path_odb_data_json,
         )
-        Utils.write_json(self.taskparams, self.path_inpjson)
-        Log.log("TaskExecutor> json saved")
+        Utils.write_json(self.taskparams, self.path_param_copy_json)
+        Log.log("TaskExecutor> Json saved")
 
         # ===保存动画
         session.viewports["Viewport: 1"].odbDisplay.basicOptions.setValues(
