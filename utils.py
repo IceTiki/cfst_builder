@@ -1,5 +1,6 @@
 import json as _json
 import time
+from itertools import zip_longest
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -49,3 +50,13 @@ def format_time(with_date=False):
     date_str = f"{time_struct.tm_year}-{time_struct.tm_mon}-{time_struct.tm_mday}"
     time_str = f"{time_struct.tm_hour}-{time_struct.tm_min}-{time_struct.tm_sec}"
     return f"{date_str}--{time_str}" if with_date else f"{time_str}"
+
+def gene_markdown_table(data: dict):
+    index_arr, value_arr = zip(*data.items())
+
+    text = f"""|{"|".join(map(str, index_arr))}|
+|{'|'.join(map(lambda x:":-:", range(len(index_arr))))}|\n"""
+
+    for values in zip_longest(*value_arr, fillvalue=""):
+        text += f"""|{"|".join(map(str, values))}|\n"""
+    return text
