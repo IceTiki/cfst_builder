@@ -1101,6 +1101,7 @@ class TaskHandler:
             cla.__run_mode_folder(task_warehouse)
         finally:
             os.chdir(ORIGIN_WORKDIR)
+        Log.log("Tasks completed!!!!!!!!!")
 
     @classmethod
     def __run_mode_folder(cla, task_warehouse=TASK_WAREHOUSE):
