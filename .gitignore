@@ -6,4 +6,4 @@ _test.py
 *.yml
 *.pyc
 test.py
-
+user_task_generator.py
