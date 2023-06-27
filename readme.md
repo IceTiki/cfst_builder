@@ -3,13 +3,13 @@
 ## 文档
 
 * **[建模参数](docs/建模参数.md)**
+* **[开发文档](docs/开发文档.md)**
 
 # PLAN&TODO
 
 ## PLAN
 
-- [ ] 任务执行状态检测
-- [ ] 服务器获取任务
+- [ ] 网络获取任务
 
 ## TODO
 
@@ -17,28 +17,6 @@
 - [ ] 网格、方向、密度
 - [ ] 弹性阶段的参数会影响塑性阶段吗
 - [ ] 断裂能 真的是N/m吗
-- [ ] 偏压应变$\varepsilon$的计算方法
-
-## 开发
-
-* 中英对照
-  * 部件
-    * `pole`中心立杆
-    * `rod`拉杆
-    * `tubelar`钢管
-    * `concrete`混凝土
-* `python2.7`注意事项
-  * `abaqus 2021`内置`python2.7`
-  * `python2.7`中使用`urllib2`而不是`urllib3`
-  * `python2.7`中的`\`的行为与`c`语言类似，`int`除法只会返回`int`。
-  * `python2.7`中的`print`函数，似乎不支持解包参数（比如`print(*item)`）
-  * `python2.7`对`unicode`的支持比较差
-    * 字符串`str`仅支持`ascii`，中文使用`unicode`类型进行储存（比如中文路径）
-    * `print`仅能输出「仅包含`ascii`字符的`unicode`」
-    * 含有中文的`unicode`可以用`repr`函数转换为「`u'\u4e16\u754c'`」的形式再`print`输出
-    * `python2.7`中的`str`是接近`bytes`的存在，甚至有`decode`方法
-    * 读取`json`时候，如果选择了以`uft-8`编码读取。那么所有字符串都以`unicode`进行储存（哪怕是纯`ascii`的字符串）
-    * `abaqus`中许多函数仅支持`python2.7`中的`str`，「仅包含`ascii`字符的`unicode`」可以用`str`进行转换
 
 
 # 参考
@@ -53,10 +31,10 @@
   * [Abaqus Scripting Reference Guide (6.14)](http://130.149.89.49:2080/v6.14/books/ker/default.htm?startat=pt01ch07pyo04.html)`abaqus-python开发手册`
   * [ABAQUS Scripting User's Manual (v6.6)](https://classes.engineering.wustl.edu/2009/spring/mase5513/abaqus/docs/v6.6/books/cmd/default.htm?startat=pt02ch06s01.html)`abaqus cae使用手册`
   * [Element integration point variables](https://abaqus-docs.mit.edu/2017/English/SIMACAEOUTRefMap/simaout-c-std-elementintegrationpointvariables.htm)`输出变量含义说明`
+  * [CAE User's Manual PDF](http://dsk-016-1.fsid.cvut.cz:2080/v6.12/pdf_books/CAE.pdf)
+  * [Scripting User's Manual PDF](http://dsk-016-1.fsid.cvut.cz:2080/v6.12/pdf_books/SCRIPT_USER.pdf)
 * 其他
   * [如何使用Nvidia显卡对abaqus进行加速](https://blog.csdn.net/kaede0v0/article/details/121474168)
-
-
 
 ## 杂项
 
