@@ -1,6 +1,6 @@
-from .utils import JsonFile, gene_markdown_table
+from .utils import JsonFile
 from pathlib import Path
-from typing import Union, Iterable, Literal, Sequence, overload
+from typing import Union, Iterable, Literal, Sequence, overload, Callable
 import numpy as np
 import math
 
@@ -9,7 +9,7 @@ class TaskFolder:
     circul_area_to_dia = staticmethod(lambda area: math.sqrt(area * 4 / math.pi))
 
     def __init__(self, folder_path: Union[str, Path]) -> None:
-        self.path_root = Path(folder_path).absolute()
+        self.path_root: Path = Path(folder_path).absolute()
         self.__cache_data = {}
 
     def __str__(self) -> str:
@@ -18,7 +18,8 @@ class TaskFolder:
     @staticmethod
     def axis_angle2rotation_matrix(axis_vector: np.ndarray, left: bool = False):
         """
-        轴角转旋转矩阵
+        将「轴角」转换为「旋转矩阵」
+
         Parameters
         ---
         axis_vector : np.ndarray
@@ -65,7 +66,6 @@ class TaskFolder:
     ) -> dict:
         """
         在柱端刚性面上, 导出一个点的位移数据
-        TODO : 不确定UR1, UR2, UR3的旋转体系(目前使用欧拉角)
 
         Parameters
         ---
@@ -124,24 +124,16 @@ class TaskFolder:
             self.__cache_data.pop(key)
 
     @property
-    def _test_e_xy(self) -> tuple[np.ndarray, np.ndarray]:
-        X1 = np.array(self.get_endpoint_displacement(end="top")["U3"])
-        X2 = np.array(self.get_endpoint_displacement(end="bottom")["U3"])
-
-        X = X1 - X2
-        X = -X * (1 / self.z_len)
-
-        Y = np.array(self.odb_extract["top_referpoint"]["RF3"])
-        Y = -Y / 1000
-        return X, Y
-
-    @property
     def path_status(self) -> Path:
         return self.path_root / "task_status.json"
 
     @property
     def path_taskparams(self) -> Path:
         return self.path_root / "task_params.json"
+
+    @property
+    def path_comments(self) -> Path:
+        return self.path_root / "comments.json"
 
     @property
     def path_results(self) -> Path:
@@ -203,7 +195,7 @@ class TaskFolder:
                 ),
                 "layer_spacing": self.user_params["rod_pattern"]["layer_spacing"],
                 "name": self.user_params["meta"]["taskname"],
-                "comment": self.user_params["comment"],
+                "comments": self.user_params["comments"],
             }
         return self.__cache_data[key]
 
@@ -218,6 +210,12 @@ class TaskFolder:
     @property
     def z_len(self) -> float:
         return self.task_params["geometry"]["z_len"]
+
+    @property
+    def comments(self) -> dict:
+        if "comments" not in self.__cache_data:
+            self.__cache_data["comments"] = JsonFile.load(self.path_comments)
+        return self.__cache_data["comments"]
 
     @property
     def odb_extract(self) -> dict:
@@ -269,17 +267,25 @@ class TaskFolderList(list):
     def __getitem__(self, __s: slice) -> Sequence[TaskFolder]:
         ...
 
-    def __getitem__(self, __key):
+    @overload
+    def __getitem__(self, __k: Callable[[TaskFolder], bool]):
+        ...
+
+    def __getitem__(self, __key: Union[int, slice, str, Callable[[TaskFolder], bool]]):
         if isinstance(__key, int):
             return super().__getitem__(__key)
         elif isinstance(__key, slice):
             return self.__class__(super().__getitem__(__key))
-        elif type(__key) == str:
+        elif isinstance(__key, str):
             for i in self:
                 if i.__str__() == __key:
                     return i
             else:
                 raise KeyError(f"{__key} not in {self}")
+        elif isinstance(__key, Callable):
+            return self.__class__(i for i in self if __key(i))
+        else:
+            return TypeError(f"unsupported type: {type(__key)}")
 
     def __setitem__(self, *args, **kwargs):
         return super().__setitem__(*args, **kwargs)

@@ -12,7 +12,6 @@ import io
 import time
 import os
 import traceback
-import sys
 import urllib2
 
 STDOUT_ENCODING = "gbk"
@@ -196,7 +195,7 @@ class TaskExecutor:
             self.rod_pattern,
             self.meta,
             self.misc,
-            self.comment,
+            self.comments,
         ) = (
             params["materials"],
             params["geometry"],
@@ -204,7 +203,7 @@ class TaskExecutor:
             params["rod_pattern"],
             params["meta"],
             params["misc"],
-            params["comment"],
+            params["comments"],
         )
 
         materials = self.materials
@@ -284,6 +283,7 @@ class TaskExecutor:
         }
 
         # ===约束拉杆样式
+        self.rod_pattern["number_layers"] = int(self.rod_pattern["number_layers"])
         self.rod_exist = bool(self.rod_pattern["pattern_rod"])
         self.pole_exist = bool(self.rod_pattern["pattern_pole"])
         self.union_exist = self.rod_exist or self.pole_exist

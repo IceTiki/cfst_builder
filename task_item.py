@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
 import itertools
 from pathlib import Path
-from typing import Union, Literal, Iterable
+from typing import Union, Literal, Iterator
 import math
 import numpy as np
 
 from materlib import materials, constitutive_models
-from utils import format_time, JsonFile
+from .utils import format_time, JsonFile
 
 
 @dataclass
@@ -28,19 +28,12 @@ class Geometry:
         钢材布种数量(x,y,z)方向
     """
 
-    mesh_table = {
-        "best": ((18, 18, 60), (18, 18, 60)),  # 3h
-        "excel": ((12, 12, 24), (12, 12, 30)),  # 7min
-        "nice": ((9, 9, 16), (7, 7, 20)),  # 2min
-        "fast": ((6, 6, 16), (5, 5, 12)),
-    }
-
     x_len: float
     y_len: float
     z_len: float
     tubelar_thickness: float
-    concrete_mesh: tuple[int, ...] = (6, 6, 10)
-    steel_mesh: tuple[int, ...] = (5, 5, 8)
+    concrete_mesh: tuple[int, ...] = (9, 9, 36)  # 5min
+    steel_mesh: tuple[int, ...] = (9, 9, 36)  # 5min
 
     @property
     def tube_section_area(self):
@@ -173,44 +166,82 @@ class RodPattern:
     number_layers: int
     layer_spacing: float
 
-    rod_ushape_pattern_library = {
-        "alpha": [
-            [[1 / 2, 0], [1 / 2, 1]],
-            [[0, 1 / 2], [1, 1 / 2]],
-        ],
-        "beta": [
-            [[1 / 2, 1 / 3], [1 / 2, 0]],
-            [[1 / 2, 1 / 3], [0, 1 / 3]],
-            [[1 / 2, 1 / 3], [1, 1 / 3]],
-            [[1 / 2, 2 / 3], [1 / 2, 1]],
-            [[1 / 2, 2 / 3], [0, 2 / 3]],
-            [[1 / 2, 2 / 3], [1, 2 / 3]],
-        ],
-        "gamma": [
-            [[1 / 2, 1 / 4], [1 / 2, 0]],
-            [[1 / 2, 1 / 4], [0, 1 / 4]],
-            [[1 / 2, 1 / 4], [1, 1 / 4]],
-            [[1 / 2, 3 / 4], [1 / 2, 1]],
-            [[1 / 2, 3 / 4], [0, 3 / 4]],
-            [[1 / 2, 3 / 4], [1, 3 / 4]],
-            [[0, 1 / 2], [1, 1 / 2]],
-        ],
+    USHAPE_PATTERN_LIBRARY = {
+        "": {"pole": (), "rod": ()},
+        " ": {"pole": (), "rod": ()},
+        "-": {"pole": ((1 / 2, 1 / 2),), "rod": (((0, 1 / 2), (1, 1 / 2)),)},
+        "+": {
+            "pole": ((1 / 2, 1 / 2),),
+            "rod": (((0, 1 / 2), (1, 1 / 2)), ((1 / 2, 0), (1 / 2, 1))),
+        },
+        "=": {
+            "pole": ((1 / 2, 1 / 3), (1 / 2, 2 / 3)),
+            "rod": (
+                ((0, 1 / 3), (1, 1 / 3)),
+                ((0, 2 / 3), (1, 2 / 3)),
+            ),
+        },
+        "T": {
+            "pole": ((1 / 2, 1 / 3), (1 / 2, 2 / 3)),
+            "rod": (
+                ((0, 1 / 3), (1, 1 / 3)),
+                ((0, 2 / 3), (1, 2 / 3)),
+                ((1 / 2, 0), (1 / 2, 1 / 3)),
+                ((1 / 2, 2 / 3), (1 / 2, 1)),
+            ),
+        },
+        "L": {
+            "pole": (
+                (1 / 3, 1 / 3),
+                (1 / 3, 2 / 3),
+                (2 / 3, 1 / 3),
+                (2 / 3, 2 / 3),
+            ),
+            "rod": (
+                ((0, 1 / 3), (1 / 3, 1 / 3)),
+                ((2 / 3, 1 / 3), (1, 1 / 3)),
+                ((0, 2 / 3), (1 / 3, 2 / 3)),
+                ((2 / 3, 2 / 3), (1, 2 / 3)),
+                ((1 / 3, 0), (1 / 3, 1 / 3)),
+                ((1 / 3, 2 / 3), (1 / 3, 1)),
+                ((2 / 3, 0), (2 / 3, 1 / 3)),
+                ((2 / 3, 2 / 3), (2 / 3, 1)),
+            ),
+        },
     }
 
-    pole_ushape_pattern_library = {
-        "alpha": [
-            [1 / 2, 1 / 2],
-        ],
-        "beta": [
-            [1 / 2, 1 / 3],
-            [1 / 2, 2 / 3],
-        ],
-        "gamma": [
-            [1 / 2, 1 / 4],
-            [1 / 2, 2 / 4],
-            [1 / 2, 3 / 4],
-        ],
-    }
+    @staticmethod
+    def show_pattern(patt: dict = USHAPE_PATTERN_LIBRARY["+"]):
+        """
+        绘出拉杆图形
+
+        Parameters
+        ---
+        patt : dict, default=USHAPE_PATTERN_LIBRARY["+"]
+            {
+            "pole": list[Line2d],
+            "pattern_pole" : tuple[Point2d]
+            }
+        """
+        from matplotlib import pyplot as plt
+
+        rod, pole = patt["rod"], patt["pole"]
+        _, ax = plt.subplots()
+        ax.set_aspect(1)
+
+        for line in rod:
+            ax.plot(
+                [point[0] for point in line],
+                [point[1] for point in line],
+                color="black",
+            )
+        ax.scatter(
+            [point[0] for point in pole], [point[1] for point in pole], color="black"
+        )
+        ax.plot([0, 1, 1, 0, 0], [0, 0, 1, 1, 0], color="black")
+
+        plt.show()
+        plt.close()
 
     @staticmethod
     def get_division(number: int) -> tuple:
@@ -231,6 +262,10 @@ class RodPattern:
         (0.2, 0.4, 0.6, 0.8)
         """
         return tuple((i + 1) / (number + 1) for i in range(number))
+
+    @staticmethod
+    def calculate_layer_spacing(number_layers: int, z_len: float):
+        return z_len / (number_layers + 1)
 
     @classmethod
     def get_orthogonal_pattern(cla, x_number=1, y_number=1) -> tuple[Line2d]:
@@ -303,7 +338,7 @@ class RodPattern:
         )
         pattern_pole = tuple(map(converpoint, pattern_pole_normal))
 
-        layer_spacing = geo.z_len / (number_layers + 1)
+        layer_spacing = cla.calculate_layer_spacing(number_layers, geo.z_len)
 
         area_rod, area_pole = map(lambda x: math.pi * (x * x) / 4, (dia_rod, dia_pole))
 
@@ -403,7 +438,7 @@ class AbaqusData:
     material_tubelar: materials.Steel
     material_rod: materials.SteelBar
     material_pole: materials.SteelBar
-    comment: dict = field(default_factory=dict)
+    comments: dict = field(default_factory=dict)
 
     def name_iter(prefix=f"{format_time()}_ecc_cfst_alpha_", suffix="", start=0):
         num = start
@@ -413,13 +448,13 @@ class AbaqusData:
 
     @staticmethod
     def get_ecc_cfst_alpha_template(
-        name_iter: Iterable = name_iter,
+        name_iter: Iterator = name_iter(),
     ):
         """
 
         Parameters
         ---
-        name_iter : Iterable
+        name_iter : Iterator
             任务名迭代器
         """
         params = {
@@ -432,19 +467,19 @@ class AbaqusData:
             "length": 1200,
             "tubelar_thickness": 6,
             "mesh": ((9, 9, 36), (9, 9, 36)),
-            "e": 0.233,
+            "e": 0.25,
             "pattern_rod": tuple(),
             "pattern_pole": tuple(),
             "rod_dia": 14,
-            "pole_dia": 24,
-            "layer_number": 8,
+            "pole_dia": 20,
+            "layer_number": 7,  # 150mm
             "name": next(name_iter),
-            "comment": {},
+            "comments": {},
         }
         return params
 
     @classmethod
-    def init_ecc_cfst_alpha(cla, params):
+    def init_ecc_cfst_alpha(cla, params: dict = get_ecc_cfst_alpha_template()):
         """偏压CFST快速建模参数"""
 
         # ===材料参数
@@ -510,7 +545,7 @@ class AbaqusData:
             mater_tubelar,
             mater_rod,
             mater_pole,
-            params["comment"],
+            params["comments"],
         )
 
     @property
@@ -647,12 +682,31 @@ class AbaqusData:
             for k, v in self.__dict__.items()
         }
 
-    def gene_task_folder(self, path_output="tasks", calculate=True):
+    def gene_task_folder(
+        self, path_output: Union[str, Path] = "tasks", calculate: bool = True
+    ):
+        """
+        生成任务文件夹(以供abaqus_modeling.py执行建模)
+
+        Parameters
+        ---
+        path_output : str | Path, default="tasks"
+            任务文件夹输出路径
+        calculate : bool
+            是否提交运算(如果为否, 则仅建模)
+        """
         (Path(path_output) / self.meta.taskname).mkdir(parents=True, exist_ok=True)
+        # ===task_params.json
         JsonFile.write(
             self.extract(),
             (Path(path_output) / self.meta.taskname / "task_params.json"),
         )
+        # ===comments.json
+        JsonFile.write(
+            self.comments,
+            (Path(path_output) / self.meta.taskname / "comments.json"),
+        )
+        # ===task_status.json
         JsonFile.write(
             {
                 "modelled": "TODO",
@@ -678,7 +732,7 @@ class AbaqusData:
             "rod_pattern": self.rod_pattern.extract(),
             "meta": self.meta.extract(),
             "misc": self.__extract_misc,
-            "comment": self.comment,
+            "comments": self.comments,
         }
 
         return {
