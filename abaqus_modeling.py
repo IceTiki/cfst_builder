@@ -15,6 +15,7 @@ import traceback
 import sys
 import urllib2
 
+STDOUT_ENCODING = "gbk"
 ORIGIN_WORKDIR = os.path.abspath(os.getcwd())
 
 
@@ -112,7 +113,7 @@ class Utils:
     def write_json(item, jsonFile="data.json", encoding="utf-8", ensure_ascii=False):
         """写入Json文件"""
         with io.open(jsonFile, "w", encoding=encoding) as f:
-            f.write(json.dumps(item, ensure_ascii=ensure_ascii).decode("utf-8"))
+            f.write(unicode(json.dumps(item, ensure_ascii=ensure_ascii)))
 
     @staticmethod
     def http_get(url):
@@ -139,23 +140,43 @@ class Utils:
 
 
 class Log:
-    log_path = os.path.join(ORIGIN_WORKDIR, "%s_log.txt" % Utils.format_time(True))
+    log_folder = os.path.join(ORIGIN_WORKDIR, "logs")
+    if not os.path.isdir(log_folder):
+        os.makedirs(log_folder)
+    log_path = os.path.join(log_folder, "%s_log.txt" % Utils.format_time(True))
     log_txt_file = io.open(log_path, "a", encoding="utf-8")
 
     @classmethod
     def log(cla, *args, **kwargs):
+        """
+        Notes
+        ---
+        [Python对中文字符的处理(utf-8/ gbk/ unicode)](https://blog.csdn.net/chixujohnny/article/details/51782826)
+        """
+        file_encoding = "utf-8"
+        sysout_encoding = STDOUT_ENCODING
         kwargs.setdefault("seq", " ")
-        args = map(
-            lambda x: x.encode("unicode_escape").decode("ascii")
-            if isinstance(x, unicode)
-            else str(x),
-            args,
-        )
+
+        def conver_item(item):
+            if isinstance(item, unicode):
+                return item.encode(sysout_encoding)
+            try:
+                return str(item).decode(file_encoding).encode(sysout_encoding)
+            except UnicodeDecodeError:
+                pass
+            try:
+                return str(item).decode(sysout_encoding).encode(sysout_encoding)
+            except UnicodeDecodeError:
+                return repr(str(item))
+
+        args = map(conver_item, args)  # 将所有内容转换为「sysout_encoding」编码的字符串
         fm_str = kwargs["seq"].join(list(args))
         fm_str = "|||%s|||\n%s" % (Utils.format_time(True), fm_str)
         print(fm_str)
 
-        cla.log_txt_file.write((fm_str + "\n").decode("utf-8"))
+        cla.log_txt_file.write(
+            (fm_str + "\n").decode(sysout_encoding)
+        )  # 将字符串转换为unicode
         cla.log_txt_file.flush()
 
 
