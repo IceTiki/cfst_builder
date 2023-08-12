@@ -5,7 +5,7 @@ from typing import Union, Literal, Iterator
 import math
 import numpy as np
 
-from materlib import materials, constitutive_models
+from .materlib import materials, constitutive_models
 from .utils import format_time, JsonFile
 
 
@@ -472,7 +472,7 @@ class AbaqusData:
             "pattern_pole": tuple(),
             "rod_dia": 14,
             "pole_dia": 20,
-            "layer_number": 7,  # 150mm
+            "layer_number": 7,  # 1200mm / (7 + 1) = 150mm
             "name": next(name_iter),
             "comments": {},
         }
